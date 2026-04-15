@@ -1,0 +1,44 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# IDE / local agent
+.vscode/
+.idea/
+.cursor/
+.claude/
+*.swp
+*.swo
+
+# Next.js dev HTTPS certs (tự sinh local)
+frontend/certificates/
+
+# Scratch / local experiments
+backend/scratch/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL certs
+nginx/ssl/*.pem
+nginx/ssl/*.key
+
+# Logs
+*.log
