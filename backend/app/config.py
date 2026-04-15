@@ -60,6 +60,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "https://127.0.0.1:3002",
         "https://salemate.vercel.app",
+        # Vercel preview/production (dự án frontend — cập nhật nếu đổi tên project)
+        "https://frontend-ivory-ten-93.vercel.app",
+        "https://frontend-k52ygbxh1-wibu1977s-projects.vercel.app",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

@@ -56,3 +56,18 @@ ESLint có thể báo **warning** (vd. `<img>`); miễn `npm run check` exit cod
 
 - API: `GET https://<api>/health` → `{ "status": "ok", ... }`.
 - Frontend gọi API qua `NEXT_PUBLIC_API_URL` và rewrite `/api/*` trong `next.config.js`.
+
+---
+
+## Sau khi deploy Vercel (bắt buộc cho login / dashboard)
+
+Trên **Vercel → Project → Settings → Environment Variables**, thêm:
+
+| Biến | Giá trị |
+|------|--------|
+| `NEXT_PUBLIC_API_URL` | URL public của API (Railway), ví dụ `https://xxx.up.railway.app` — **không** có `/` cuối |
+| `NEXT_PUBLIC_META_APP_ID` | App ID Meta (cùng số trong Meta Developer) |
+
+Không set `NEXT_PUBLIC_API_URL` thì build client có thể gọi nhầm `127.0.0.1:8000` qua rewrite và **đăng nhập sẽ lỗi** trên môi trường production.
+
+Trên **Railway / backend**, thêm domain Vercel vào `CORS_ORIGINS` (hoặc dùng các URL mặc định đã có trong `app/config.py` nếu trùng project).
