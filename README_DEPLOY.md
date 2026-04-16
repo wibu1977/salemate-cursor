@@ -71,3 +71,34 @@ Trên **Vercel → Project → Settings → Environment Variables**, thêm:
 Không set `NEXT_PUBLIC_API_URL` thì build client có thể gọi nhầm `127.0.0.1:8000` qua rewrite và **đăng nhập sẽ lỗi** trên môi trường production.
 
 Trên **Railway / backend**, thêm domain Vercel vào `CORS_ORIGINS` (hoặc dùng các URL mặc định đã có trong `app/config.py` nếu trùng project).
+
+---
+
+## Đẩy code lên GitHub
+
+1. Tạo repository **trống** trên GitHub (không tick “Add README”).
+2. Trên máy (đã cài Git, đã `git config user.name` / `user.email`):
+   ```powershell
+   cd "C:\Users\user\Downloads\salemate cursor"
+   .\scripts\github-push.ps1 -RemoteUrl "https://github.com/<USER>/<REPO>.git"
+   ```
+3. Nếu GitHub hỏi đăng nhập: dùng **Personal Access Token** (classic) quyền `repo` làm mật khẩu HTTPS, hoặc cấu hình **SSH** (`git@github.com:USER/REPO.git`).
+
+---
+
+## Railway CLI + MCP (deploy backend)
+
+1. Cài CLI (một lần): `npm install -g @railway/cli`
+2. **Đăng nhập** (một trong hai):
+   - Tương tác: `railway login`
+   - Không tương tác (Cursor / MCP / CI): [Railway → Account → Tokens](https://railway.app/account/tokens) → tạo token → đặt biến môi trường **`RAILWAY_TOKEN`**, mở terminal mới và kiểm tra `railway whoami`
+3. Trong thư mục **`backend`**, lần đầu: `railway init` (chọn project / tạo service) hoặc tạo project trên [railway.app](https://railway.app) rồi `railway link`.
+4. Deploy upload từ máy:
+   ```powershell
+   .\scripts\railway-deploy-backend.ps1 -Detach
+   ```
+   Hoặc: `cd backend` → `railway up --detach`
+
+**MCP `user-Railway` trong Cursor** dùng cùng CLI: cần `railway` trên `PATH` và đã login hoặc có `RAILWAY_TOKEN`. Sau đó có thể gọi tool **deploy** với `workspacePath` = đường dẫn tuyệt đối tới thư mục `backend`.
+
+**Deploy từ GitHub (khuyến nghị cho CI):** trên Railway → New Project → **Deploy from GitHub** → chọn repo → **Root Directory** = `backend` → thêm biến môi trường giống `backend/.env` (production).
