@@ -1,0 +1,5 @@
+# Khi deploy từ root monorepo — dùng Dockerfile ở root (copy backend/).
+# Hoặc trong Railway: Service → Settings → Root Directory = backend (dùng backend/Dockerfile).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"

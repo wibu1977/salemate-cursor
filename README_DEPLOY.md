@@ -33,7 +33,12 @@ ESLint có thể báo **warning** (vd. `<img>`); miễn `npm run check` exit cod
 
 ## Backend (Railway)
 
-1. Tạo project mới → **Deploy from GitHub** (chọn repo), **Root Directory** = `backend`.
+**Monorepo (repo có `frontend/`, `backend/`, …):** một trong hai cách:
+
+- **Cách A (khuyến nghị):** Trong Railway → Service → **Settings → Root Directory** = `backend`. Railpack/Nixpacks sẽ thấy `requirements.txt` và Python đúng chỗ.
+- **Cách B:** Giữ root repo làm thư mục build — dùng **`Dockerfile` + `railway.toml` ở root** (đã có trong repo): build image bằng Docker, copy nội dung từ `backend/`. Không cần `start.sh`.
+
+1. Tạo project mới → **Deploy from GitHub** (chọn repo). Nếu dùng cách A, đặt **Root Directory** = `backend`.
 2. Thêm biến môi trường: copy từ `backend/.env.example`, điền Production (Postgres URL async + sync, Redis, Meta, OpenAI, Toss, JWT, `CORS_ORIGINS` = URL Vercel).
 3. **Start command** (Web service):  
    `uvicorn app.main:app --host 0.0.0.0 --port $PORT`

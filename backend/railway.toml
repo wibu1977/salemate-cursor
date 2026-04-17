@@ -1,4 +1,5 @@
-# Railway: đặt Root Directory = backend (repo monorepo) hoặc trỏ Dockerfile vào thư mục này.
+# Dùng khi Service "Root Directory" = backend (docker-compose cũng build từ ./backend).
+# Nếu deploy từ root monorepo không đổi Root Directory → xem railway.toml ở root repo.
 # https://docs.railway.com/guides/dockerfiles
 
 [build]
