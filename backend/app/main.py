@@ -69,6 +69,7 @@ app.include_router(
 
 @app.get("/")
 async def root():
+    """Railway / nhiều load balancer mặc định ping `/` — tránh 404 làm health fail."""
     return {"status": "ok", "service": settings.APP_NAME}
 
 

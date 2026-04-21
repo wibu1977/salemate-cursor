@@ -44,10 +44,13 @@ class Settings(BaseSettings):
     # Google Sheets
     GOOGLE_SHEETS_CREDENTIALS: str = ""
 
-    # JWT Auth
+    # JWT Auth (legacy / Facebook login)
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
+
+    # Supabase Auth — JWT Secret từ Dashboard → Settings → API (không phải anon key)
+    SUPABASE_JWT_SECRET: str = ""
 
     # CORS
     CORS_ORIGINS: list[str] = [

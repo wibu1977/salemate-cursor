@@ -2,20 +2,29 @@
 
 import { useEffect } from "react";
 
-const FB_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || "";
+const FB_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID?.trim() || "";
 
 export function FacebookSDK() {
   useEffect(() => {
-    if (typeof window === "undefined" || !FB_APP_ID) return;
+    if (typeof window === "undefined") return;
+    if (!FB_APP_ID) {
+      console.warn(
+        "[Salemate] NEXT_PUBLIC_META_APP_ID chưa set — Facebook SDK sẽ không tải. Thêm biến trên Railway/Vercel và rebuild frontend."
+      );
+      return;
+    }
     if (document.getElementById("facebook-jssdk")) return;
 
     window.fbAsyncInit = function () {
-      window.FB.init({
-        appId: FB_APP_ID,
-        cookie: true,
-        xfbml: false,
-        version: "v21.0",
-      });
+      const fb = window.FB;
+      if (fb) {
+        fb.init({
+          appId: FB_APP_ID,
+          cookie: true,
+          xfbml: false,
+          version: "v21.0",
+        });
+      }
     };
 
     const script = document.createElement("script");
@@ -32,7 +41,7 @@ export function FacebookSDK() {
 declare global {
   interface Window {
     fbAsyncInit?: () => void;
-    FB: {
+    FB?: {
       init: (params: Record<string, unknown>) => void;
       getLoginStatus: (
         callback: (response: { authResponse?: { accessToken: string } }) => void

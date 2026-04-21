@@ -216,7 +216,7 @@ class CampaignService:
         from app.utils.campaign_webview_jwt import create_campaign_webview_token
 
         ws = await db.get(Workspace, workspace_id)
-        if not ws or not settings.SALEMATE_PAGE_ACCESS_TOKEN:
+        if not ws or not ws.owner_facebook_id or not settings.SALEMATE_PAGE_ACCESS_TOKEN:
             return
 
         try:

@@ -10,6 +10,7 @@ const navItems = [
   { href: "/dashboard/orders", label: "Đơn hàng" },
   { href: "/dashboard/inventory", label: "Tồn kho" },
   { href: "/dashboard/campaigns", label: "Chiến dịch" },
+  { href: "/connect-facebook", label: "Kết nối Facebook" },
   { href: "/dashboard/settings", label: "Cài đặt" },
 ];
 
@@ -21,8 +22,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleLogout = () => {
-    clearAuth();
+  const handleLogout = async () => {
+    await clearAuth();
     router.push("/login");
   };
 

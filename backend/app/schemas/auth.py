@@ -12,6 +12,12 @@ class TokenResponse(BaseModel):
     workspace_id: uuid.UUID
 
 
+class AuthMeResponse(BaseModel):
+    workspace_id: uuid.UUID
+    auth: str  # "supabase" | "legacy"
+    email: str | None = None
+
+
 class WorkspaceSetup(BaseModel):
     name: str
     page_ids: list[str] = []

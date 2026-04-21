@@ -44,9 +44,17 @@ export function setAuth(token: string, workspaceId: string) {
   setBrowserCookie(AUTH_WORKSPACE_COOKIE, workspaceId, AUTH_COOKIE_MAX_AGE_SEC);
 }
 
-export function clearAuth() {
+export async function clearAuth() {
   deleteBrowserCookie(AUTH_TOKEN_COOKIE);
   deleteBrowserCookie(AUTH_WORKSPACE_COOKIE);
+  if (typeof window !== "undefined") {
+    const { getBrowserSupabase, isSupabaseAuthConfigured } = await import(
+      "@/lib/supabase/browser"
+    );
+    if (isSupabaseAuthConfigured()) {
+      await getBrowserSupabase()?.auth.signOut();
+    }
+  }
 }
 
 export function isAuthenticated(): boolean {

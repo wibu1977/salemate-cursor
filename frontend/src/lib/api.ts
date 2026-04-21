@@ -29,9 +29,24 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   config.baseURL = getApiBaseURL();
   if (typeof window !== "undefined") {
+    const { getBrowserSupabase, isSupabaseAuthConfigured } = await import(
+      "@/lib/supabase/browser"
+    );
+    if (isSupabaseAuthConfigured()) {
+      const sb = getBrowserSupabase();
+      if (sb) {
+        const {
+          data: { session },
+        } = await sb.auth.getSession();
+        if (session?.access_token) {
+          config.headers.Authorization = `Bearer ${session.access_token}`;
+          return config;
+        }
+      }
+    }
     const token = getToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -42,9 +57,9 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401 && typeof window !== "undefined") {
-      clearAuth();
+      await clearAuth();
       window.location.href = "/login";
     }
     return Promise.reject(error);
@@ -57,7 +72,19 @@ export function formatApiError(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
   }
   if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
-    return "Không kết nối được API. Hãy chạy backend (uvicorn trên 127.0.0.1:8000) và khởi động lại frontend.";
+    const onLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1");
+    if (onLocalhost) {
+      return "Không kết nối được API. Hãy chạy backend (uvicorn trên 127.0.0.1:8000) và khởi động lại frontend.";
+    }
+    return (
+      "Không kết nối được API. Trên hosting (Railway): (1) Service frontend → Variables: " +
+      "NEXT_PUBLIC_API_URL = URL HTTPS của backend (vd. https://xxx.up.railway.app, không / cuối, phải là https:// — http:// sẽ không dùng được từ trang HTTPS). " +
+      "(2) Redeploy frontend sau khi đổi biến (next build mới nhận NEXT_PUBLIC_*). " +
+      "(3) Backend: CORS_ORIGINS gồm URL dashboard. (4) Nếu vẫn lỗi, F12 → Network xem request admin/auth bị chặn hay CORS."
+    );
   }
 
   const raw = err.response?.data;
@@ -143,6 +170,7 @@ export const pagesApi = {
 };
 
 export const authApi = {
+  authMe: () => api.get<{ workspace_id: string; auth: string; email: string | null }>("/admin/auth/me"),
   facebookLogin: (accessToken: string) =>
     api.post("/admin/auth/facebook", { access_token: accessToken }),
   setupWorkspace: (data: Record<string, unknown>) =>

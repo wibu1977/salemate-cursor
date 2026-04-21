@@ -4,14 +4,15 @@ import uuid
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_workspace_id
+from app.api.deps import get_current_workspace_id, _decode_supabase_payload, security
 from app.config import get_settings
 from app.database import get_db
 from app.schemas.admin import DashboardSummary, OrderListItem, OrderDetail, OrderActionRequest
-from app.schemas.auth import FacebookLoginRequest, TokenResponse, WorkspaceSetup
+from app.schemas.auth import AuthMeResponse, FacebookLoginRequest, TokenResponse, WorkspaceSetup
 from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 
@@ -23,6 +24,52 @@ _settings = get_settings()
 def _facebook_login_error_payload(code: str, message: str) -> dict[str, str]:
     """JSON trong body lỗi: { detail: { error, message } } (FastAPI gói trong detail)."""
     return {"error": code, "message": message}
+
+
+@router.get("/auth/me", response_model=AuthMeResponse)
+async def auth_me(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """Provisioning workspace cho user Supabase; hoặc trả workspace từ JWT legacy."""
+    token = credentials.credentials
+    sup_secret = (_settings.SUPABASE_JWT_SECRET or "").strip()
+    if sup_secret:
+        payload = _decode_supabase_payload(token, sup_secret)
+        if payload and payload.get("sub"):
+            try:
+                uid = uuid.UUID(str(payload["sub"]))
+            except ValueError:
+                uid = None
+            if uid:
+                meta = payload.get("user_metadata") or {}
+                name = meta.get("full_name") or meta.get("name")
+                ws_id = await AuthService.ensure_workspace_for_supabase_user(
+                    db,
+                    user_id=uid,
+                    email=payload.get("email"),
+                    name=name if isinstance(name, str) else None,
+                )
+                return AuthMeResponse(
+                    workspace_id=ws_id,
+                    auth="supabase",
+                    email=payload.get("email"),
+                )
+
+    try:
+        legacy = jwt.decode(
+            token,
+            _settings.JWT_SECRET_KEY,
+            algorithms=[_settings.JWT_ALGORITHM],
+        )
+        wid = legacy.get("workspace_id")
+        if not wid:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return AuthMeResponse(workspace_id=uuid.UUID(str(wid)), auth="legacy", email=None)
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail="Invalid token") from e
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Invalid token") from e
 
 
 @router.post("/auth/facebook", response_model=TokenResponse)

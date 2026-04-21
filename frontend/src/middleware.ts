@@ -1,8 +1,65 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+
 import { AUTH_TOKEN_COOKIE } from "@/lib/auth-cookies";
 
-export function middleware(request: NextRequest) {
+function supabaseConfigured(): boolean {
+  return !!(
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+  );
+}
+
+export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const needsAuth =
+    pathname.startsWith("/dashboard") || pathname.startsWith("/connect-facebook");
+
+  if (!needsAuth) {
+    return NextResponse.next();
+  }
+
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  });
+
+  if (supabaseConfigured()) {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+            response = NextResponse.next({
+              request: { headers: request.headers },
+            });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      return response;
+    }
+    /* Supabase chưa có session: cho phép JWT legacy (đăng nhập Facebook cũ) */
+    const legacy = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
+    if (legacy) {
+      return response;
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const token = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
   if (!token) {
     return NextResponse.redirect(new URL("/login", request.url));
@@ -11,5 +68,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/connect-facebook"],
 };
