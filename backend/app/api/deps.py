@@ -18,7 +18,6 @@ def _decode_supabase_payload(token: str, secret: str) -> dict | None:
             token,
             secret,
             algorithms=["HS256"],
-            audience="authenticated",
         )
     except jwt.PyJWTError:
         return None
