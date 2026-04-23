@@ -57,12 +57,18 @@ export async function middleware(request: NextRequest) {
     if (legacy) {
       return response;
     }
-    return NextResponse.redirect(new URL("/login", request.url));
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+    const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
+    return NextResponse.redirect(`${origin}/login`);
   }
 
   const token = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
   if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+    const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
+    return NextResponse.redirect(`${origin}/login`);
   }
   return NextResponse.next();
 }
