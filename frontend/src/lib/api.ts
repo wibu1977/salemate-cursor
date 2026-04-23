@@ -59,6 +59,27 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401 && typeof window !== "undefined") {
+      const { getBrowserSupabase, isSupabaseAuthConfigured } = await import(
+        "@/lib/supabase/browser"
+      );
+      if (isSupabaseAuthConfigured()) {
+        const sb = getBrowserSupabase();
+        if (sb) {
+          const {
+            data: { session },
+          } = await sb.auth.getSession();
+          if (session?.access_token) {
+            /* Phiên Supabase vẫn có nhưng API trả 401 → gần như chắc backend thiếu/sai SUPABASE_JWT_SECRET
+             * (hoặc JWT không HS256). Đừng signOut Supabase — chỉ báo để tránh “vừa đăng nhập đã văng”. */
+            window.location.href =
+              "/login?error=" +
+              encodeURIComponent(
+                "API từ chối token. Trên Railway → service Backend: đặt SUPABASE_JWT_SECRET = JWT Secret (Settings → API của Supabase, không phải anon key), rồi redeploy backend."
+              );
+            return Promise.reject(error);
+          }
+        }
+      }
       await clearAuth();
       window.location.href = "/login";
     }
