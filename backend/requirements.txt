@@ -38,6 +38,7 @@ google-auth==2.35.0
 
 # --- Auth ---
 PyJWT==2.9.0
+cryptography==43.0.1
 passlib[bcrypt]==1.7.4
 
 # --- Clustering / analytics (workers) — cài riêng khi cần Celery clustering: pip install -r requirements-workers.txt

@@ -51,6 +51,7 @@ class Settings(BaseSettings):
 
     # Supabase Auth — JWT Secret từ Dashboard → Settings → API (không phải anon key)
     SUPABASE_JWT_SECRET: str = ""
+    SUPABASE_URL: str = ""
 
     # CORS
     CORS_ORIGINS: list[str] = [
