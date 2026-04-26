@@ -66,6 +66,7 @@ class Settings(BaseSettings):
         # Vercel preview/production (dự án frontend — cập nhật nếu đổi tên project)
         "https://frontend-ivory-ten-93.vercel.app",
         "https://frontend-k52ygbxh1-wibu1977s-projects.vercel.app",
+        "https://pure-curiosity-production-f937.up.railway.app",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
