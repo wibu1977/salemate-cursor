@@ -19,11 +19,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  });
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
 
   if (supabaseConfigured()) {
+    /**
+     * Collect cookies Supabase wants to refresh/set, then apply them to the
+     * final response in one pass — avoids reassigning `response` inside the
+     * callback and ensures the request cookies are read correctly.
+     */
+    const pendingCookies: Array<{ name: string; value: string; options?: Record<string, unknown> }> = [];
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -33,15 +40,7 @@ export async function middleware(request: NextRequest) {
             return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-            response = NextResponse.next({
-              request: {
-                headers: request.headers,
-              },
-            });
-            cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options)
-            );
+            pendingCookies.push(...cookiesToSet);
           },
         },
       }
@@ -55,22 +54,30 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     if (user) {
+      const response = NextResponse.next({
+        request: { headers: request.headers },
+      });
+      pendingCookies.forEach(({ name, value, options }) =>
+        response.cookies.set(name, value, options)
+      );
       return response;
     }
 
     /* Supabase chưa có session: cho phép JWT legacy (đăng nhập Facebook cũ) */
     const legacy = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
     if (legacy) {
+      const response = NextResponse.next({
+        request: { headers: request.headers },
+      });
+      pendingCookies.forEach(({ name, value, options }) =>
+        response.cookies.set(name, value, options)
+      );
       return response;
     }
 
-    const forwardedHost = request.headers.get("x-forwarded-host");
-    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
-    const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
-    
     // Tránh redirect loop nếu đã ở trang login
     if (pathname === "/login") {
-      return response;
+      return NextResponse.next();
     }
 
     return NextResponse.redirect(`${origin}/login?reason=no_session`);
@@ -78,9 +85,6 @@ export async function middleware(request: NextRequest) {
 
   const token = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
   if (!token) {
-    const forwardedHost = request.headers.get("x-forwarded-host");
-    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
-    const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
     return NextResponse.redirect(`${origin}/login?reason=no_token`);
   }
   return NextResponse.next();
