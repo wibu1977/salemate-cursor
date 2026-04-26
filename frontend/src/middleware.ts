@@ -32,10 +32,12 @@ export async function middleware(request: NextRequest) {
           getAll() {
             return request.cookies.getAll();
           },
-          setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
+          setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
             response = NextResponse.next({
-              request: { headers: request.headers },
+              request: {
+                headers: request.headers,
+              },
             });
             cookiesToSet.forEach(({ name, value, options }) =>
               response.cookies.set(name, value, options)
@@ -45,6 +47,9 @@ export async function middleware(request: NextRequest) {
       }
     );
 
+    // IMPORTANT: Do not use getUser() here if you want to avoid extra API calls.
+    // getSession() is faster but less secure for sensitive operations.
+    // However, for a middleware redirect check, getUser() is recommended.
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -52,15 +57,23 @@ export async function middleware(request: NextRequest) {
     if (user) {
       return response;
     }
+
     /* Supabase chưa có session: cho phép JWT legacy (đăng nhập Facebook cũ) */
     const legacy = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
     if (legacy) {
       return response;
     }
+
     const forwardedHost = request.headers.get("x-forwarded-host");
     const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
     const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
-    return NextResponse.redirect(`${origin}/login`);
+    
+    // Tránh redirect loop nếu đã ở trang login
+    if (pathname === "/login") {
+      return response;
+    }
+
+    return NextResponse.redirect(`${origin}/login?reason=no_session`);
   }
 
   const token = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
@@ -68,7 +81,7 @@ export async function middleware(request: NextRequest) {
     const forwardedHost = request.headers.get("x-forwarded-host");
     const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
     const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : new URL(request.url).origin;
-    return NextResponse.redirect(`${origin}/login`);
+    return NextResponse.redirect(`${origin}/login?reason=no_token`);
   }
   return NextResponse.next();
 }
