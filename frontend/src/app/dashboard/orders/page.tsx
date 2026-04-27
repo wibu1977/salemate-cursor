@@ -52,10 +52,10 @@ interface OrderData {
 }
 
 const FILTER_OPTIONS = [
-  { label: "T?t c?", value: "" },
-  { label: "Ch? duy?t", value: "flagged" },
-  { label: "?? xong", value: "completed" },
-  { label: "?? h?y", value: "cancelled" },
+  { label: "Tất cả", value: "" },
+  { label: "Chờ duyệt", value: "flagged" },
+  { label: "Đã xong", value: "completed" },
+  { label: "Đã hủy", value: "cancelled" },
 ];
 
 export default function OrdersPage() {
@@ -101,12 +101,12 @@ export default function OrdersPage() {
     mutationFn: ({ id, action }: { id: string; action: string }) =>
       dashboardApi.orderAction(id, action),
     onSuccess: (_, { action }) => {
-      toast(action === "approve" ? "??n h?ng ?? ???c duy?t th?nh c?ng" : "?? t? ch?i ??n h?ng", "success");
+      toast(action === "approve" ? "Đơn hàng đã được duyệt thành công" : "Đã từ chối đơn hàng", "success");
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["order-detail", selectedId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
-    onError: () => toast("Thao t?c x? l? th?t b?i", "error"),
+    onError: () => toast("Thao tác xử lý thất bại", "error"),
   });
 
   return (
@@ -114,8 +114,8 @@ export default function OrdersPage() {
       {/* Header & Title */}
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-ink">Qu?n l? ??n h?ng</h1>
-          <p className="mt-2 text-base font-medium text-ink-muted">Gi?m s?t giao d?ch v? x? l? ph? duy?t thanh to?n AI theo th?i gian th?c</p>
+          <h1 className="text-4xl font-black tracking-tight text-ink">Quản lý Đơn hàng</h1>
+          <p className="mt-2 text-base font-medium text-ink-muted">Giám sát giao dịch và xử lý phê duyệt thanh toán AI theo thời gian thực</p>
         </div>
         
         {/* Search Bar */}
@@ -125,7 +125,7 @@ export default function OrdersPage() {
           </div>
           <input
             type="text"
-            placeholder="T?m theo m? ??n, t?n, s? ?i?n tho?i..."
+            placeholder="Tìm theo mã đơn, tên, số điện thoại..."
             className="w-full rounded-2xl border-none bg-white py-3.5 pl-12 pr-4 text-sm font-semibold shadow-sm shadow-slate-200 outline-none ring-1 ring-slate-200 transition-all focus:ring-2 focus:ring-accent focus:shadow-md"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -140,7 +140,7 @@ export default function OrdersPage() {
             <Package className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-slate-400">T?ng ??n h?ng</p>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Tổng đơn hàng</p>
             <p className="text-2xl font-black text-slate-900">{stats.total}</p>
           </div>
         </div>
@@ -149,7 +149,7 @@ export default function OrdersPage() {
             <Clock className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-amber-600/60">Ch? ph? duy?t</p>
+            <p className="text-xs font-black uppercase tracking-widest text-amber-600/60">Chờ phê duyệt</p>
             <p className="text-2xl font-black text-slate-900">{stats.pending}</p>
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function OrdersPage() {
             <TrendingUp className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600/60">Doanh thu th?c</p>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-600/60">Doanh thu thực</p>
             <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.revenue)}</p>
           </div>
         </div>
@@ -185,7 +185,7 @@ export default function OrdersPage() {
           
           <button className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50">
             <Calendar className="h-4 w-4" />
-            H?M NAY
+            HÔM NAY
           </button>
         </div>
 
@@ -194,11 +194,11 @@ export default function OrdersPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Giao d?ch</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Kh?ch h?ng</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">T?ng ti?n</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tr?ng th?i</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Th?i gian</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Giao dịch</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Khách hàng</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tổng tiền</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Trạng thái</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Thời gian</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"></th>
                 </tr>
               </thead>
@@ -237,8 +237,8 @@ export default function OrdersPage() {
                                   {o.customer_name?.[0]?.toUpperCase() || "?"}
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-black text-slate-900">{o.customer_name || "Kh?ch ?n danh"}</span>
-                                  <span className="text-[10px] font-bold text-slate-400">{o.customer_phone || "?"}</span>
+                                  <span className="text-sm font-black text-slate-900">{o.customer_name || "Khách ẩn danh"}</span>
+                                  <span className="text-[10px] font-bold text-slate-400">{o.customer_phone || "—"}</span>
                                 </div>
                               </div>
                             </td>
@@ -272,15 +272,15 @@ export default function OrdersPage() {
                                 <Search className="h-10 w-10" />
                               </div>
                               <div className="space-y-2">
-                                <p className="text-lg font-black text-slate-900 uppercase tracking-widest">Kh?ng t?m th?y k?t qu?</p>
-                                <p className="text-sm font-medium leading-relaxed text-slate-400">Ch?ng t?i kh?ng t?m th?y ??n h?ng n?o kh?p v?i t?m ki?m c?a b?n. Th? d?ng t? kh?a kh?c ho?c x?a b? l?c.</p>
+                                <p className="text-lg font-black text-slate-900 uppercase tracking-widest">Không tìm thấy kết quả</p>
+                                <p className="text-sm font-medium leading-relaxed text-slate-400">Chúng tôi không tìm thấy đơn hàng nào khớp với tìm kiếm của bạn. Thử dùng từ khóa khác hoặc xóa bộ lọc.</p>
                               </div>
                               {searchQuery && (
                                 <button 
                                   onClick={() => setSearchQuery("")}
                                   className="text-xs font-black text-accent hover:underline"
                                 >
-                                  X?A T?M KI?M
+                                  XÓA TÌM KIẾM
                                 </button>
                               )}
                             </div>
@@ -293,11 +293,11 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="B?ng ?i?u khi?n giao d?ch" size="lg">
+      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="Bảng điều khiển giao dịch" size="lg">
         {detailLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="h-14 w-14 animate-spin rounded-full border-4 border-accent border-t-transparent shadow-xl" />
-            <p className="mt-6 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">?ang ??ng b? AI Core...</p>
+            <p className="mt-6 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Đang đồng bộ AI Core...</p>
           </div>
         ) : detail ? (
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
@@ -309,7 +309,7 @@ export default function OrdersPage() {
                     <ShoppingBag className="h-8 w-8" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">M? giao d?ch</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Mã giao dịch</span>
                     <h3 className="text-4xl font-black text-slate-900">{detail.memo_code}</h3>
                   </div>
                 </div>
@@ -330,7 +330,7 @@ export default function OrdersPage() {
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-2">
                     <Package className="h-5 w-5 text-slate-900" />
-                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Chi ti?t s?n ph?m</h4>
+                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Chi tiết sản phẩm</h4>
                   </div>
                   <span className="text-xs font-bold text-slate-400">{detail.items?.length || 0} ITEMS</span>
                 </div>
@@ -344,7 +344,7 @@ export default function OrdersPage() {
                           </div>
                           <div>
                             <p className="text-base font-black text-slate-900">{item.product_name}</p>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SKU: SM-{Math.floor(Math.random()*10000)} | {formatCurrency(item.subtotal / item.quantity)} / c?i</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SKU: SM-{Math.floor(Math.random()*10000)} | {formatCurrency(item.subtotal / item.quantity)} / cái</p>
                           </div>
                         </div>
                         <span className="text-base font-black text-slate-900">{formatCurrency(item.subtotal)}</span>
@@ -354,15 +354,15 @@ export default function OrdersPage() {
                   
                   <div className="mt-10 space-y-4 border-t border-slate-200/60 pt-8">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-2">
-                      <span className="uppercase tracking-widest">T?m t?nh</span>
+                      <span className="uppercase tracking-widest">Tạm tính</span>
                       <span>{formatCurrency(detail.total_amount)}</span>
                     </div>
                     <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-2">
-                      <span className="uppercase tracking-widest">Ph? v?n chuy?n</span>
-                      <span className="text-emerald-600">MI?N PH?</span>
+                      <span className="uppercase tracking-widest">Phí vận chuyển</span>
+                      <span className="text-emerald-600">MIỄN PHÍ</span>
                     </div>
                     <div className="flex items-center justify-between pt-4 px-2">
-                      <span className="text-base font-black uppercase tracking-[0.2em] text-slate-400">T?ng c?ng</span>
+                      <span className="text-base font-black uppercase tracking-[0.2em] text-slate-400">Tổng cộng</span>
                       <span className="text-4xl font-black text-accent drop-shadow-sm">{formatCurrency(detail.total_amount)}</span>
                     </div>
                   </div>
@@ -402,7 +402,7 @@ export default function OrdersPage() {
             <div className="space-y-8 lg:col-span-5">
               {/* Customer Card */}
               <div className="space-y-5">
-                <h4 className="px-2 text-sm font-black uppercase tracking-widest text-slate-900">Th?ng tin kh?ch h?ng</h4>
+                <h4 className="px-2 text-sm font-black uppercase tracking-widest text-slate-900">Thông tin khách hàng</h4>
                 <div className="relative overflow-hidden rounded-[2.5rem] bg-slate-900 p-8 text-white shadow-2xl shadow-slate-300">
                   {/* Decorative AI Glow */}
                   <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent/20 blur-3xl" />
@@ -413,8 +413,8 @@ export default function OrdersPage() {
                       <User className="h-8 w-8 text-accent/70" />
                     </div>
                     <div>
-                      <p className="text-xl font-black tracking-tight">{detail.customer_name || "?"}</p>
-                      <p className="text-sm font-bold text-slate-400">{detail.customer_phone || "?"}</p>
+                      <p className="text-xl font-black tracking-tight">{detail.customer_name || "—"}</p>
+                      <p className="text-sm font-bold text-slate-400">{detail.customer_phone || "—"}</p>
                     </div>
                   </div>
                   
@@ -423,15 +423,15 @@ export default function OrdersPage() {
                       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent/70">
                         <MapPin className="h-3.5 w-3.5" />
                       </div>
-                      <span className="font-bold leading-relaxed opacity-80">{detail.customer_address || "Ch?a cung c?p ??a ch?"}</span>
+                      <span className="font-bold leading-relaxed opacity-80">{detail.customer_address || "Chưa cung cấp địa chỉ"}</span>
                     </div>
                     <div className="flex gap-4">
                       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent/70">
                         <CreditCard className="h-3.5 w-3.5" />
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-black uppercase tracking-widest text-accent-muted">Ph??ng th?c</span>
-                        <span className="font-bold opacity-80">{detail.payment_method || "Chuy?n kho?n ng?n h?ng"}</span>
+                        <span className="font-black uppercase tracking-widest text-accent-muted">Phương thức</span>
+                        <span className="font-bold opacity-80">{detail.payment_method || "Chuyển khoản ngân hàng"}</span>
                       </div>
                     </div>
                   </div>
@@ -442,7 +442,7 @@ export default function OrdersPage() {
               {detail.bill_image_url && (
                 <div className="space-y-5">
                   <div className="flex items-center justify-between px-2">
-                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Minh ch?ng bill</h4>
+                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Minh chứng bill</h4>
                     <span className="text-[10px] font-black text-accent uppercase tracking-widest">AI VERIFIED</span>
                   </div>
                   <div className="group relative aspect-[3/4] overflow-hidden rounded-[2.5rem] border-8 border-white bg-slate-100 shadow-2xl shadow-slate-200 ring-1 ring-slate-100">
@@ -450,9 +450,9 @@ export default function OrdersPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-900/60 opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100">
                       <a href={detail.bill_image_url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl bg-white px-6 py-3 text-xs font-black text-slate-900 shadow-xl transition-all hover:scale-105 active:scale-95">
                         <Eye className="h-5 w-5" />
-                        XEM ?NH G?C
+                        XEM ẢNH GỐC
                       </a>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Click ?? xem chi ti?t</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Click để xem chi tiết</p>
                     </div>
                   </div>
                 </div>
@@ -471,7 +471,7 @@ export default function OrdersPage() {
                     ) : (
                       <CheckCircle2 className="h-6 w-6 transition-transform group-hover:scale-125" />
                     )}
-                    <span className="uppercase tracking-[0.2em]">PH? DUY?T ??N H?NG</span>
+                    <span className="uppercase tracking-[0.2em]">PHÊ DUYỆT ĐƠN HÀNG</span>
                   </button>
                   <button
                     onClick={() => actionMutation.mutate({ id: detail.id, action: "reject" })}
@@ -479,9 +479,9 @@ export default function OrdersPage() {
                     className="flex w-full items-center justify-center gap-4 rounded-3xl bg-white border-2 border-rose-100 py-5 text-sm font-black text-rose-600 transition-all hover:bg-rose-50 hover:border-rose-200 active:scale-95 disabled:opacity-50"
                   >
                     <XCircle className="h-6 w-6" />
-                    <span className="uppercase tracking-[0.2em]">T? CH?I GIAO D?CH</span>
+                    <span className="uppercase tracking-[0.2em]">TỪ CHỐI GIAO DỊCH</span>
                   </button>
-                  <p className="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">H?nh �?ng n?y kh�ng th? ho?n t�c</p>
+                  <p className="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Hành động này không thể hoàn tác</p>
                 </div>
               )}
             </div>

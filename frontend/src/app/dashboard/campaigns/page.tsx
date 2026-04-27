@@ -30,12 +30,12 @@ import {
 } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; icon: React.ReactNode; color: string; ring: string }> = {
-  draft: { label: "B?n nh?p", icon: <Clock className="h-3.5 w-3.5" />, color: "bg-slate-100 text-slate-600", ring: "ring-slate-200" },
-  pending_approval: { label: "Ch??duy?t", icon: <Clock className="h-3.5 w-3.5" />, color: "bg-amber-50 text-amber-600", ring: "ring-amber-200" },
-  approved: { label: "?? duy?t", icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-accent-soft text-accent", ring: "ring-accent/25" },
-  sending: { label: "?ang g?i", icon: <Send className="h-3.5 w-3.5 animate-pulse" />, color: "bg-accent-soft text-accent", ring: "ring-accent/25" },
-  completed: { label: "Ho?n th?nh", icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-emerald-50 text-emerald-600", ring: "ring-emerald-200" },
-  cancelled: { label: "?? h?y", icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-rose-50 text-rose-600", ring: "ring-rose-200" },
+  draft: { label: "Bản nháp", icon: <Clock className="h-3.5 w-3.5" />, color: "bg-slate-100 text-slate-600", ring: "ring-slate-200" },
+  pending_approval: { label: "Chờ duyệt", icon: <Clock className="h-3.5 w-3.5" />, color: "bg-amber-50 text-amber-600", ring: "ring-amber-200" },
+  approved: { label: "Đã duyệt", icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-accent-soft text-accent", ring: "ring-accent/25" },
+  sending: { label: "Đang gửi", icon: <Send className="h-3.5 w-3.5 animate-pulse" />, color: "bg-accent-soft text-accent", ring: "ring-accent/25" },
+  completed: { label: "Hoàn thành", icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-emerald-50 text-emerald-600", ring: "ring-emerald-200" },
+  cancelled: { label: "Đã hủy", icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-rose-50 text-rose-600", ring: "ring-rose-200" },
 };
 
 interface Segment {
@@ -91,12 +91,12 @@ export default function CampaignsPage() {
   const createMutation = useMutation({
     mutationFn: (data: typeof createForm) => campaignApi.createCampaign(data),
     onSuccess: () => {
-      toast("Chi?n d?ch ?? ???c t?o th?nh c?ng", "success");
+      toast("Chiến dịch đã được tạo thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       setShowCreate(false);
       setCreateForm({ name: "", target_segment_id: "", message_template: "" });
     },
-    onError: () => toast("Kh?ng th??t?o chi?n d?ch", "error"),
+    onError: () => toast("Không thể tạo chiến dịch", "error"),
   });
 
   const approveMutation = useMutation({
@@ -104,15 +104,15 @@ export default function CampaignsPage() {
       campaignApi.approveCampaign(id, action, msg),
     onSuccess: (_, { action }) => {
       const labels: Record<string, string> = {
-        approve: "Chi?n d?ch ?? ???c duy?t v? b?t ??u g?i",
-        rewrite: "AI ?ang ti?n h?nh vi?t l?i n?i dung",
-        cancel: "Chi?n d?ch ?? ???c h?y",
+        approve: "Chiến dịch đã được duyệt và bắt đầu gửi",
+        rewrite: "AI đang tiến hành viết lại nội dung",
+        cancel: "Chiến dịch đã được hủy",
       };
-      toast(labels[action] || "Thao t?c th?nh c?ng", "success");
+      toast(labels[action] || "Thao tác thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["campaign-detail", selectedId] });
     },
-    onError: () => toast("Thao t?c th?t b?i", "error"),
+    onError: () => toast("Thao tác thất bại", "error"),
   });
 
   return (
@@ -124,8 +124,8 @@ export default function CampaignsPage() {
             <Target className="h-8 w-8" />
           </div>
           <div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Chi?n d?ch Outreach</h1>
-            <p className="mt-1 text-base font-medium text-slate-500">Ti?p c?n kh?ch h?ng th?ng minh v?i s?c m?nh AI</p>
+            <h1 className="text-4xl font-black tracking-tight text-slate-900">Chiến dịch Outreach</h1>
+            <p className="mt-1 text-base font-medium text-slate-500">Tiếp cận khách hàng thông minh với sức mạnh AI</p>
           </div>
         </div>
         <button 
@@ -133,7 +133,7 @@ export default function CampaignsPage() {
           className="ai-glow group flex items-center gap-3 rounded-2xl bg-accent px-8 py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95"
         >
           <Plus className="h-5 w-5 transition-transform group-hover:rotate-90" />
-          KH?I T?O CHI?N D?CH
+          KHỞI TẠO CHIẾN DỊCH
         </button>
       </div>
 
@@ -144,9 +144,9 @@ export default function CampaignsPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-soft text-accent">
               <Users className="h-5 w-5" />
             </div>
-            <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Ph?n kh?c kh?ch h?ng m?c ti?u</h2>
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Phân khúc khách hàng mục tiêu</h2>
           </div>
-          <button className="text-xs font-black text-accent hover:underline">Xem t?t c??ph?n kh?c</button>
+          <button className="text-xs font-black text-accent hover:underline">Xem tất cả phân khúc</button>
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -166,7 +166,7 @@ export default function CampaignsPage() {
                   <h3 className="text-lg font-black text-slate-900 group-hover:text-accent transition-colors">{seg.label}</h3>
                   <div className="mt-2 flex items-baseline gap-1">
                     <span className="text-3xl font-black text-slate-900">{seg.customer_count}</span>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Kh?ch h?ng</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Khách hàng</span>
                   </div>
                 </div>
                 <p className="text-xs font-medium leading-relaxed text-slate-400 line-clamp-2">{seg.description}</p>
@@ -190,12 +190,12 @@ export default function CampaignsPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-soft text-accent">
               <BarChart3 className="h-5 w-5" />
             </div>
-            <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Chi?n d?ch g?n ??y</h2>
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Chiến dịch gần đây</h2>
           </div>
           <div className="flex items-center gap-2">
             <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">
               <Filter className="h-3.5 w-3.5" />
-              B??L?C
+              BỘ LỌC
             </button>
           </div>
         </div>
@@ -234,7 +234,7 @@ export default function CampaignsPage() {
 
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ti?n ???ti?p c?n</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tiến độ tiếp cận</span>
                           <span className="text-xs font-black text-slate-900">{Math.round(progress)}%</span>
                         </div>
                         <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
@@ -281,41 +281,41 @@ export default function CampaignsPage() {
               <div className="absolute inset-0 scale-150 bg-accent-soft blur-3xl rounded-full" />
               <Target className="relative h-20 w-20 text-accent/25" />
             </div>
-            <h3 className="text-2xl font-black text-slate-900">Ch?a c? chi?n d?ch n?o</h3>
+            <h3 className="text-2xl font-black text-slate-900">Chưa có chiến dịch nào</h3>
             <p className="mt-2 text-base font-medium text-slate-500 text-center max-w-sm">
-              B?t ??u k?ch ho?t AI ???ti?p c?n kh?ch h?ng c? m?t c?ch th?ng minh v? t?i ?u doanh s??
+              Bắt đầu kích hoạt AI để tiếp cận khách hàng của một cách thông minh và tối ưu doanh số
             </p>
             <button 
               onClick={() => setShowCreate(true)}
               className="mt-10 btn-premium px-10 py-4 text-sm tracking-widest"
             >
-              T?O CHI?N D?CH ??U TI?N
+              TẠO CHIẾN DỊCH ĐẦU TIÊN
             </button>
           </div>
         )}
       </section>
 
       {/* Create Campaign Modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="THI?T L?P CHI?N D?CH AI" size="lg">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="THIẾT LẬP CHIẾN DỊCH AI" size="lg">
         <div className="space-y-10">
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
             <div className="space-y-8">
               <div className="space-y-4">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">??nh danh chi?n d?ch</label>
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Định danh chiến dịch</label>
                 <div className="relative">
                   <Zap className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-accent" />
                   <input
                     type="text"
                     value={createForm.name}
                     onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                    placeholder="V? d?? Re-engagement Th?ng 5"
+                    placeholder="Ví dụ: Re-engagement Tháng 5"
                     className="w-full rounded-[1.5rem] border-none bg-slate-50/50 pl-14 pr-6 py-5 text-sm font-black text-slate-900 shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
                   />
                 </div>
               </div>
 
               <div className="space-y-4">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">L?a ch?n Ph?n kh?c M?c ti?u</label>
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Lựa chọn Phân khúc Mục tiêu</label>
                 <div className="grid grid-cols-1 gap-4">
                   {segments?.map((seg: Segment) => (
                     <div
@@ -341,7 +341,7 @@ export default function CampaignsPage() {
                         )}
                       </div>
                       <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{seg.customer_count} KH?CH H?NG</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{seg.customer_count} KHÁCH HÀNG</p>
                         <TrendingUp className="h-4 w-4 text-emerald-400" />
                       </div>
                     </div>
@@ -353,7 +353,7 @@ export default function CampaignsPage() {
             <div className="space-y-8">
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-1">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">N?i dung ti?p c?n</label>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Nội dung tiếp cận</label>
                   <div className="flex items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[10px] font-black text-accent">
                     <Sparkles className="h-3 w-3" />
                     AI ASSISTANT
@@ -364,7 +364,7 @@ export default function CampaignsPage() {
                     value={createForm.message_template}
                     onChange={(e) => setCreateForm({ ...createForm, message_template: e.target.value })}
                     rows={12}
-                    placeholder="???tr?ng ???AI t????ng ph?n t?ch h?nh vi v? so?n th?o tin nh?n c? nh?n h?a cho t?ng kh?ch h?ng trong nh?m..."
+                    placeholder="Để trống để AI tự động phân tích hành vi và soạn thảo tin nhắn cá nhân hóa cho từng khách hàng trong nhóm..."
                     className="w-full rounded-[2rem] border-none bg-slate-50/50 p-8 text-sm font-medium leading-relaxed text-slate-700 shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
                   />
                   <div className="absolute bottom-6 right-6">
@@ -379,10 +379,10 @@ export default function CampaignsPage() {
               <div className="rounded-3xl bg-slate-900 p-8 text-white shadow-2xl">
                 <div className="flex items-center gap-3 mb-4">
                   <Info className="h-5 w-5 text-accent-muted" />
-                  <h4 className="text-sm font-black uppercase tracking-widest">L?u ? b?o m?t</h4>
+                  <h4 className="text-sm font-black uppercase tracking-widest">Lưu ý bảo mật</h4>
                 </div>
                 <p className="text-xs font-medium leading-relaxed opacity-60">
-                  Chi?n d?ch s?????c g?i qua Facebook Messenger. ??m b?o n?i dung tu?n th??ch?nh s?ch c?a Meta. AI s??t????ng ?i?u ch?nh t?c ???g?i ???tr?nh spam.
+                  Chiến dịch sẽ được gửi qua Facebook Messenger. Đảm bảo nội dung tuân thủ chính sách của Meta. AI sẽ tự động điều chỉnh tốc độ gửi để tránh spam.
                 </p>
               </div>
             </div>
@@ -393,7 +393,8 @@ export default function CampaignsPage() {
               onClick={() => setShowCreate(false)}
               className="flex-1 rounded-2xl bg-white border-2 border-slate-100 py-5 text-sm font-black text-slate-400 transition-all hover:bg-slate-50 uppercase tracking-widest"
             >
-              H?y b??            </button>
+              Hủy bỏ
+            </button>
             <button
               onClick={() => createMutation.mutate(createForm)}
               disabled={!createForm.name || !createForm.target_segment_id || createMutation.isPending}
@@ -402,14 +403,14 @@ export default function CampaignsPage() {
               {createMutation.isPending ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
               ) : <Send className="h-5 w-5" />}
-              K?CH HO?T CHI?N D?CH
+              KÍCH HOẠT CHIẾN DỊCH
             </button>
           </div>
         </div>
       </Modal>
 
       {/* Campaign Detail Modal */}
-      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="PH�N T�CH HI?U QU? CHI?N D?CH" size="lg">
+      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="PHÂN TÍCH HIỆU QUẢ CHIẾN DỊCH" size="lg">
         {detail ? (
           <div className="space-y-12">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
@@ -436,10 +437,10 @@ export default function CampaignsPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard label="T?NG NG??I NH?N" value={detail.total_recipients} icon={<Users className="h-5 w-5" />} color="text-slate-900" bg="bg-slate-50" />
-              <StatCard label="TIN NH?N ?? G?I" value={detail.sent_count} icon={<Send className="h-5 w-5" />} color="text-accent" bg="bg-accent-soft" />
-              <StatCard label="T??L??M??(READ)" value={`${Math.round((detail.opened_count / detail.sent_count) * 100) || 0}%`} icon={<MousePointer2 className="h-5 w-5" />} color="text-blue-600" bg="bg-blue-50" />
-              <StatCard label="CHUY?N ??I (CONV)" value={detail.converted_count ?? 0} icon={<TrendingUp className="h-5 w-5" />} color="text-emerald-600" bg="bg-emerald-50" />
+              <StatCard label="TỔNG NGƯỜI NHẬN" value={detail.total_recipients} icon={<Users className="h-5 w-5" />} color="text-slate-900" bg="bg-slate-50" />
+              <StatCard label="TIN NHẮN ĐÃ GỬI" value={detail.sent_count} icon={<Send className="h-5 w-5" />} color="text-accent" bg="bg-accent-soft" />
+              <StatCard label="TỶ LỆ MỞ (READ)" value={`${Math.round((detail.opened_count / detail.sent_count) * 100) || 0}%`} icon={<MousePointer2 className="h-5 w-5" />} color="text-blue-600" bg="bg-blue-50" />
+              <StatCard label="CHUYỂN ĐỔI (CONV)" value={detail.converted_count ?? 0} icon={<TrendingUp className="h-5 w-5" />} color="text-emerald-600" bg="bg-emerald-50" />
             </div>
 
             <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
@@ -447,7 +448,7 @@ export default function CampaignsPage() {
                 <div className="flex items-center justify-between">
                   <h4 className="flex items-center gap-3 text-sm font-black text-slate-900 uppercase tracking-widest">
                     <MessageSquare className="h-5 w-5 text-accent" />
-                    N?i dung truy?n th?ng
+                    Nội dung truyền thông
                   </h4>
                   {detail.ai_generated && (
                     <span className="flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-1.5 text-[10px] font-black text-accent">
@@ -467,16 +468,17 @@ export default function CampaignsPage() {
               <div className="space-y-6">
                 <h4 className="flex items-center gap-3 text-sm font-black text-slate-900 uppercase tracking-widest">
                   <BarChart3 className="h-5 w-5 text-emerald-600" />
-                  D??ki?n k?t qu??                </h4>
+                  Dự kiến kết quả
+                </h4>
                 <div className="space-y-4 rounded-[2rem] bg-slate-900 p-8 text-white shadow-2xl">
                   <div className="space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">T??L??PH?N H?I D??KI?N</p>
-                    <p className="text-3xl font-black">12.5% <span className="text-xs font-bold text-emerald-400">??+2.1%</span></p>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">TỶ LỆ PHẢN HỒI DỰ KIẾN</p>
+                    <p className="text-3xl font-black">12.5% <span className="text-xs font-bold text-emerald-400">↑+2.1%</span></p>
                   </div>
                   <div className="h-px bg-white/10" />
                   <div className="space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">DOANH THU ??C T?NH</p>
-                    <p className="text-3xl font-black text-accent-muted">??,450,000</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">DOANH THU ƯỚC TÍNH</p>
+                    <p className="text-3xl font-black text-accent-muted">₩2,450,000</p>
                   </div>
                 </div>
               </div>
@@ -489,7 +491,7 @@ export default function CampaignsPage() {
                   disabled={approveMutation.isPending}
                   className="rounded-2xl bg-white border-2 border-slate-100 px-8 py-5 text-sm font-black text-rose-500 transition-all hover:bg-rose-50 active:scale-95 disabled:opacity-50 uppercase tracking-widest"
                 >
-                  H?Y CHI?N D?CH
+                  HỦY CHIẾN DỊCH
                 </button>
                 <button
                   onClick={() => approveMutation.mutate({ id: detail.id, action: "rewrite" })}
@@ -497,7 +499,7 @@ export default function CampaignsPage() {
                   className="flex items-center justify-center gap-3 rounded-2xl bg-white border-2 border-accent px-8 py-5 text-sm font-black text-accent transition-all hover:bg-accent-soft active:scale-95 disabled:opacity-50 uppercase tracking-widest"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  AI VI?T L?I M?I
+                  AI VIẾT LẠI MỚI
                 </button>
                 <button
                   onClick={() => approveMutation.mutate({ id: detail.id, action: "approve" })}
@@ -505,7 +507,7 @@ export default function CampaignsPage() {
                   className="ai-glow flex items-center justify-center gap-3 rounded-2xl bg-accent px-12 py-5 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
                 >
                   <Send className="h-5 w-5" />
-                  DUY?T & G?I NGAY
+                  DUYỆT & GỬI NGAY
                 </button>
               </div>
             )}
