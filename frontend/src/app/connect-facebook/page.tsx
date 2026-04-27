@@ -3,8 +3,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-
 import { pagesApi, formatApiError } from "@/lib/api";
+import {
+  Facebook,
+  ChevronLeft,
+  CheckCircle2,
+  ShieldCheck,
+  MessageSquare,
+  Zap,
+  Info,
+  ExternalLink,
+  Lock,
+  ArrowRight,
+} from "lucide-react";
 
 type FbPage = { id: string; name: string; access_token: string };
 
@@ -18,11 +29,11 @@ export default function ConnectFacebookPage() {
   const runFacebookConnect = () => {
     const appId = (process.env.NEXT_PUBLIC_META_APP_ID || "").trim();
     if (!appId) {
-      setError("Thi·∫øu NEXT_PUBLIC_META_APP_ID.");
+      setError("Thi?u NEXT_PUBLIC_META_APP_ID.");
       return;
     }
     if (typeof window === "undefined" || window.location.protocol !== "https:") {
-      setError("C·∫ßn HTTPS ƒë·ªÉ d√πng Facebook SDK.");
+      setError("C?n HTTPS ?? d˘ng Facebook SDK.");
       return;
     }
     setError(null);
@@ -39,7 +50,7 @@ export default function ConnectFacebookPage() {
     void (async () => {
       await waitFb();
       if (!window.FB) {
-        setError("Facebook SDK ch∆∞a t·∫£i. T·∫Øt AdBlock v√† t·∫£i l·∫°i trang.");
+        setError("Facebook SDK ch?a t?i. T?t AdBlock v‡ t?i l?i trang.");
         setLoading(false);
         return;
       }
@@ -47,7 +58,7 @@ export default function ConnectFacebookPage() {
       window.FB!.login(
         async (resp: { authResponse?: { accessToken: string }; status?: string }) => {
           if (!resp.authResponse?.accessToken) {
-            setError("Ch∆∞a c√≥ quy·ªÅn Facebook ho·∫∑c ƒë√£ h·ªßy.");
+            setError("Ch?a cÛ quy?n Facebook ho?c ?„ h?y.");
             setLoading(false);
             return;
           }
@@ -59,13 +70,13 @@ export default function ConnectFacebookPage() {
             const r = await fetch(url.toString());
             const data = (await r.json()) as { data?: FbPage[]; error?: { message: string } };
             if (data.error) {
-              setError(data.error.message || "Graph API l·ªói");
+              setError(data.error.message || "Graph API l?i");
               setLoading(false);
               return;
             }
             setPages(data.data || []);
             if (!(data.data || []).length) {
-              setError("Kh√¥ng th·∫•y Facebook Page n√†o. B·∫°n c·∫ßn qu·∫£n tr·ªã Page v√† c·∫•p quy·ªÅn pages_show_list.");
+              setError("KhÙng th?y Facebook Page n‡o. B?n c?n qu?n tr? Page v‡ c?p quy?n pages_show_list.");
             }
           } catch (e) {
             setError(formatApiError(e));
@@ -100,53 +111,176 @@ export default function ConnectFacebookPage() {
   };
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-10">
-      <Link href="/dashboard" className="text-sm text-primary-600 hover:underline">
-        ‚Üê V·ªÅ dashboard
-      </Link>
-      <h1 className="mt-4 text-2xl font-bold text-gray-900">K·∫øt n·ªëi Facebook Page</h1>
-      <p className="mt-2 text-gray-600">
-        ƒêƒÉng nh·∫≠p Facebook (t√†i kho·∫£n qu·∫£n tr·ªã Page), ch·ªçn Page ƒë·ªÉ nh·∫≠n tin nh·∫Øn v√† b·∫≠t webhook.
-      </p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-surface-page p-6 sm:p-12">
+      <div className="w-full max-w-2xl space-y-12">
+        <Link
+          href="/dashboard"
+          className="group inline-flex items-center gap-2 text-sm font-black text-slate-400 transition-colors hover:text-accent"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.06] bg-white shadow-sm group-hover:bg-accent-soft">
+            <ChevronLeft className="h-4 w-4" />
+          </div>
+          V? DASHBOARD
+        </Link>
 
-      <button
-        type="button"
-        onClick={runFacebookConnect}
-        disabled={loading}
-        className="mt-6 w-full rounded-lg bg-[#1877F2] px-6 py-3 font-medium text-white hover:bg-[#166FE5] disabled:opacity-50"
-      >
-        {loading ? "ƒêang m·ªü Facebook‚Ä¶" : "ƒêƒÉng nh·∫≠p Facebook ƒë·ªÉ ch·ªçn Page"}
-      </button>
+        <div className="space-y-4">
+          <div className="flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-accent text-white shadow-xl shadow-accent/25">
+            <Facebook className="h-10 w-10" />
+          </div>
+          <h1 className="text-4xl font-black tracking-tight text-ink">K?t n?i Fanpage</h1>
+          <p className="max-w-md text-lg font-medium text-ink-muted">
+            KÌch ho?t AI Sales Agent trÍn c·c kÍnh b·n h‡ng Facebook c?a b?n ch? v?i v‡i c˙ click.
+          </p>
+        </div>
 
-      {error ? (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {error}
-        </p>
-      ) : null}
+        <div className="relative overflow-hidden rounded-[3rem] border border-black/[0.06] bg-white p-12 shadow-xl shadow-black/[0.04]">
+          <div className="absolute right-0 top-0 h-40 w-40 translate-x-10 -translate-y-10 rounded-full bg-accent-soft blur-3xl" />
 
-      {pages.length > 0 ? (
-        <ul className="mt-6 space-y-3">
-          {pages.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm"
-            >
-              <div>
-                <div className="font-medium text-gray-900">{p.name}</div>
-                <div className="text-xs text-gray-500">ID: {p.id}</div>
+          {!pages.length ? (
+            <div className="relative space-y-10">
+              <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
+                <BenefitItem
+                  icon={<ShieldCheck className="h-6 w-6" />}
+                  title="B?o m?t tuy?t ??i"
+                  desc="D? li?u m„ hÛa 256-bit chu?n Meta Business."
+                />
+                <BenefitItem
+                  icon={<Zap className="h-6 w-6" />}
+                  title="KÌch ho?t t?c thÏ"
+                  desc="T? ??ng ??ng b? tin nh?n & kh·ch h‡ng."
+                />
+                <BenefitItem
+                  icon={<MessageSquare className="h-6 w-6" />}
+                  title="AI Sales 24/7"
+                  desc="T? ??ng tr? l?i, ch?t ??n ngay c? khi b?n ng?."
+                />
+                <BenefitItem
+                  icon={<CheckCircle2 className="h-6 w-6" />}
+                  title="D? d‡ng qu?n l˝"
+                  desc="T?t c? Fanpage trÍn m?t dashboard duy nh?t."
+                />
               </div>
+
+              <div className="border-t border-slate-50 pt-6">
+                <button
+                  type="button"
+                  onClick={runFacebookConnect}
+                  disabled={loading}
+                  className="ai-glow flex w-full items-center justify-center gap-4 rounded-2xl bg-[#1877F2] py-5 font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:-translate-y-1 hover:bg-[#166FE5] active:scale-95 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <div className="h-6 w-6 animate-spin rounded-full border-3 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <Facebook className="h-6 w-6" />
+                      K?T N?I V?I FACEBOOK
+                    </>
+                  )}
+                </button>
+                <p className="mt-6 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  By connecting, you agree to our <span className="text-ink underline">Terms of Service</span>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="relative space-y-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-black text-ink">Ch?n Page ?? kÌch ho?t</h3>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                  {pages.length} PAGES FOUND
+                </span>
+              </div>
+
+              <ul className="space-y-4">
+                {pages.map((p) => (
+                  <li
+                    key={p.id}
+                    className="group flex items-center justify-between rounded-[2rem] border-2 border-slate-50 bg-slate-50/30 px-8 py-6 transition-all hover:border-accent hover:bg-white hover:shadow-2xl hover:shadow-accent/10"
+                  >
+                    <div className="flex items-center gap-5">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-accent shadow-sm transition-all group-hover:bg-accent group-hover:text-white">
+                        <Facebook className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <div className="font-black text-ink transition-colors group-hover:text-accent">{p.name}</div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">ID: {p.id}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={connectingId === p.id}
+                      onClick={() => void connectOne(p)}
+                      className={`flex items-center gap-2 rounded-xl px-6 py-3 text-xs font-black uppercase tracking-widest transition-all ${
+                        connectingId === p.id
+                          ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                          : "bg-accent text-white shadow-lg shadow-accent/15 hover:bg-accent-hover active:scale-95"
+                      }`}
+                    >
+                      {connectingId === p.id ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                      ) : (
+                        <>
+                          KÕCH HO?T
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
               <button
                 type="button"
-                disabled={connectingId === p.id}
-                onClick={() => void connectOne(p)}
-                className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                onClick={() => setPages([])}
+                className="w-full text-center text-xs font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-accent"
               >
-                {connectingId === p.id ? "ƒêang k·∫øt n·ªëi‚Ä¶" : "K·∫øt n·ªëi"}
+                H?y v‡ l‡m l?i
               </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="flex animate-shake items-start gap-4 rounded-3xl border border-rose-100 bg-rose-50 p-6">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-rose-500 shadow-sm">
+              <Info className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-black uppercase tracking-wider text-rose-900">CÛ l?i x?y ra</p>
+              <p className="text-sm font-medium text-rose-600">{error}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-6 opacity-60 sm:grid-cols-3">
+          <FooterLabel icon={<Lock className="h-4 w-4" />} text="M„ hÛa d? li?u" />
+          <FooterLabel icon={<ShieldCheck className="h-4 w-4" />} text="Meta Verified App" />
+          <FooterLabel icon={<ExternalLink className="h-4 w-4" />} text="Tu‚n th? GDPR" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BenefitItem({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+        {icon}
+      </div>
+      <div className="space-y-1">
+        <h4 className="text-sm font-black uppercase tracking-wider text-ink">{title}</h4>
+        <p className="text-xs font-medium leading-relaxed text-ink-muted">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+function FooterLabel({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+      {icon}
+      {text}
     </div>
   );
 }

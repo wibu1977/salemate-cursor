@@ -63,10 +63,13 @@ class Settings(BaseSettings):
         "https://localhost:3002",
         "http://127.0.0.1:3002",
         "https://127.0.0.1:3002",
+        "https://localhost:3005",
+        "https://127.0.0.1:3005",
         "https://salemate.vercel.app",
         # Vercel preview/production (dự án frontend — cập nhật nếu đổi tên project)
         "https://frontend-ivory-ten-93.vercel.app",
         "https://frontend-k52ygbxh1-wibu1977s-projects.vercel.app",
+        # Dashboard Railway cũ — có thể xóa khi không còn dùng; production nên bổ sung URL mới qua CORS_ORIGINS trong .env
         "https://pure-curiosity-production-f937.up.railway.app",
     ]
 

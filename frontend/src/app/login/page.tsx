@@ -1,65 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { authApi, formatApiError } from "@/lib/api";
-import { setAuth } from "@/lib/auth";
+import Link from "next/link";
+import { getAuthRedirectOrigin } from "@/lib/auth-redirect-origin";
 import { getBrowserSupabase, isSupabaseAuthConfigured } from "@/lib/supabase/browser";
-
-/** Facebook JS SDK chỉ cho phép FB.login / getLoginStatus trên HTTPS (kể cả localhost). */
-function isFacebookSdkAllowed(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.location.protocol === "https:";
-}
+import {
+  Sparkles,
+  Mail,
+  ArrowRight,
+  AlertCircle,
+  Chrome,
+  ChevronLeft,
+  ShieldCheck,
+  Zap,
+  Lock,
+  CheckCircle2,
+} from "lucide-react";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [needsHttps, setNeedsHttps] = useState(false);
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.protocol === "http:") {
-      setNeedsHttps(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     const err = new URLSearchParams(window.location.search).get("error");
-    if (err) {
-      alert(decodeURIComponent(err));
-    }
+    if (err) console.error(decodeURIComponent(err));
   }, []);
-
-  const formatFbError = (err: unknown) => {
-    if (err && typeof err === "object") {
-      const o = err as Record<string, unknown>;
-      if (typeof o.message === "string") return o.message;
-      if (typeof o.error_message === "string") return o.error_message;
-    }
-    if (err instanceof Error) return err.message;
-    try {
-      return JSON.stringify(err);
-    } catch {
-      return String(err);
-    }
-  };
-
-  const redirectAfterAuth = () => {
-    router.push("/dashboard");
-    router.refresh();
-  };
 
   const handleGoogle = async () => {
     const sb = getBrowserSupabase();
-    if (!sb) {
-      alert("Chưa cấu hình Supabase (NEXT_PUBLIC_SUPABASE_URL / ANON_KEY).");
-      return;
-    }
+    if (!sb) return;
     setLoading(true);
-    const origin = window.location.origin;
+    const origin = getAuthRedirectOrigin();
     const { error } = await sb.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -67,21 +40,15 @@ export default function LoginPage() {
       },
     });
     setLoading(false);
-    if (error) {
-      alert(error.message);
-    }
+    if (error) console.error(error.message);
   };
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     const sb = getBrowserSupabase();
-    if (!sb) {
-      alert("Chưa cấu hình Supabase.");
-      return;
-    }
-    if (!email.trim()) return;
+    if (!sb || !email.trim()) return;
     setLoading(true);
-    const origin = window.location.origin;
+    const origin = getAuthRedirectOrigin();
     const { error } = await sb.auth.signInWithOtp({
       email: email.trim(),
       options: {
@@ -90,221 +57,149 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (error) {
-      alert(error.message);
+      console.error(error.message);
       return;
     }
     setEmailSent(true);
   };
 
-  const handleFacebookLogin = async () => {
-    if (!isFacebookSdkAllowed()) {
-      alert(
-        "Facebook Login chỉ hoạt động trên HTTPS.\n\n" +
-          "Hãy dừng dev server và chạy lại: npm run dev\n" +
-          "Sau đó mở https://localhost:3000 (chấp nhận cảnh báo chứng chỉ nếu trình duyệt hỏi).\n\n" +
-          "Hoặc dùng URL HTTPS (ví dụ ngrok) đã thêm trong Meta App → Valid OAuth Redirect URIs."
-      );
-      return;
-    }
-
-    const appId = (process.env.NEXT_PUBLIC_META_APP_ID || "").trim();
-    if (!appId) {
-      alert(
-        "Chưa cấu hình NEXT_PUBLIC_META_APP_ID trên hosting.\n\n" +
-          "Railway → service Frontend → Variables: thêm NEXT_PUBLIC_META_APP_ID = App ID Meta (số trong Meta Developer), sau đó Deploy lại / Redeploy để Next.js embed biến vào build."
-      );
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const deadline = Date.now() + 12_000;
-      while (!window.FB && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      if (!window.FB) {
-        alert(
-          "Facebook SDK chưa tải được sau vài giây.\n\n" +
-            "• Tắt AdBlock / Privacy Badger / uBlock cho domain Railway của bạn, rồi F5.\n" +
-            "• Mở DevTools (F12) → tab Network: tìm connect.facebook.net/sdk.js — nếu bị chặn (blocked) thì do tiện ích hoặc mạng.\n" +
-            "• Kiểm tra App ID Meta đúng và domain đã thêm trong Meta App (App domains + OAuth Redirect URIs)."
-        );
-        setLoading(false);
-        return;
-      }
-
-      try {
-        window.FB.login(
-          function (response: {
-            authResponse?: { accessToken: string };
-            status?: string;
-          }) {
-            if (response.authResponse) {
-              void (async () => {
-                try {
-                  const { data } = await authApi.facebookLogin(
-                    response.authResponse!.accessToken
-                  );
-                  setAuth(data.access_token, String(data.workspace_id));
-                  redirectAfterAuth();
-                } catch (err) {
-                  console.error("API Error during login call:", err);
-                  alert(`Đăng nhập thất bại: ${formatApiError(err)}`);
-                } finally {
-                  setLoading(false);
-                }
-              })();
-            } else {
-              const st = response.status;
-              const hint =
-                st === "not_authorized"
-                  ? "Ứng dụng chưa được bạn chấp nhận trong Facebook. Mở Cài đặt Facebook → Ứng dụng và trang web → tìm app Salemate, bật quyền, rồi thử Đăng nhập lại."
-                  : st === "unknown"
-                    ? "Phiên Facebook chưa rõ trạng thái. Tải lại trang (F5), đăng nhập facebook.com trong tab khác nếu cần, rồi bấm đăng nhập lại."
-                    : "Đăng nhập Facebook chưa hoàn tất (đã đóng cửa sổ, từ chối quyền, hoặc bấm Kết nối lại nhưng chưa xong). Hãy bấm lại nút đăng nhập và chấp nhận đủ quyền cho app.";
-              alert(hint);
-              setLoading(false);
-            }
-          },
-          {
-            scope:
-              "pages_messaging,pages_manage_metadata,pages_read_engagement",
-          }
-        );
-      } catch (err) {
-        console.error("Lỗi khi gọi FB.login:", err);
-        alert(
-          `Đã xảy ra lỗi khi mở đăng nhập Facebook: ${formatFbError(err)}. Kiểm tra Meta App: thêm domain/ngrok vào App domains & Valid OAuth Redirect URIs.`
-        );
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error("Lỗi Facebook SDK:", err);
-      alert(`Lỗi Facebook SDK: ${formatFbError(err)}`);
-      setLoading(false);
-    }
-  };
-
   const supabaseOn = isSupabaseAuthConfigured();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 to-white px-4">
-      <div className="card w-full max-w-md text-center">
-        {needsHttps && (
-          <div
-            className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm text-amber-900"
-            role="status"
-          >
-            <strong className="font-semibold">Yêu cầu HTTPS:</strong> Facebook
-            không cho đăng nhập trên <code className="rounded bg-amber-100 px-1">http://</code>.
-            Dùng{" "}
-            <code className="rounded bg-amber-100 px-1">npm run dev</code>{" "}
-            (đã bật HTTPS) và mở{" "}
-            <code className="rounded bg-amber-100 px-1">
-              https://localhost:3000
-            </code>
-            .
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-surface-page p-6">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-1/4 -top-1/4 h-[1000px] w-[1000px] rounded-full bg-accent/5 blur-[120px]" />
+        <div className="absolute -bottom-1/4 -right-1/4 h-[1000px] w-[1000px] rounded-full bg-accent/5 blur-[120px]" />
+      </div>
+
+      <div className="relative w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-8 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-accent"
+        >
+          <ChevronLeft className="h-3 w-3" />
+          Quay l?i trang ch?
+        </Link>
+
+        <div className="overflow-hidden rounded-[3rem] border border-black/[0.06] bg-white p-10 shadow-2xl shadow-accent/5 sm:p-12">
+          <div className="mb-8 flex flex-col items-center text-center">
+            <Link href="/" className="mb-6 inline-flex items-center gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/25">
+                <Sparkles className="h-8 w-8" />
+              </div>
+            </Link>
+            <h1 className="text-2xl font-black tracking-tight text-ink sm:text-3xl">??ng nh?p / ??ng k?</h1>
+            <p className="mt-2 text-sm font-medium text-ink-muted">
+              D?ng Google ho?c email ? kh?ng c?n m?t kh?u
+            </p>
           </div>
-        )}
-        <h1 className="text-3xl font-bold text-gray-900">
-          Sale<span className="text-primary-600">mate</span>
-        </h1>
-        <p className="mt-2 text-gray-600">Đăng nhập để quản lý cửa hàng</p>
 
-        {supabaseOn ? (
-          <div className="mt-8 space-y-4 text-left">
-            <button
-              type="button"
-              onClick={() => void handleGoogle()}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-6 py-3 text-base font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
-            >
-              Đăng nhập với Google
-            </button>
-            {emailSent ? (
-              <p className="text-center text-sm text-gray-600">
-                Đã gửi link đăng nhập tới email của bạn. Kiểm tra hộp thư và bấm link
-                (có thể nằm trong thư mục spam).
-              </p>
-            ) : (
-              <form onSubmit={(e) => void handleMagicLink(e)} className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Email (magic link)
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg bg-primary-600 px-6 py-3 text-base font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {loading ? "Đang gửi..." : "Gửi link đăng nhập"}
-                </button>
-              </form>
-            )}
-          </div>
-        ) : null}
-
-        {supabaseOn ? (
-          <p className="mt-6 text-xs text-gray-500">
-            Sau khi đăng nhập, vào <strong>Kết nối Facebook</strong> để nối Page Messenger.
-          </p>
-        ) : (
-          <p className="mt-6 text-xs text-amber-800">
-            <strong>Chưa thấy Supabase trên bản build này.</strong> Trên Railway: thêm{" "}
-            <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_SUPABASE_URL</code> và{" "}
-            <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> vào service
-            Frontend, rồi <strong>Deploy lại / chạy build mới</strong> (Next chỉ nhúng{" "}
-            <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_*</code> lúc{" "}
-            <code className="rounded bg-amber-100 px-1">npm run build</code>
-            — chỉ restart container là chưa đủ).
-          </p>
-        )}
-
-        {supabaseOn ? (
-          <details className="mt-8 border-t border-gray-100 pt-4 text-left">
-            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-              Đăng nhập bằng Facebook (tài khoản cũ) — tùy chọn
-            </summary>
-            <div className="mt-4">
+          {supabaseOn ? (
+            <div className="space-y-6">
               <button
                 type="button"
-                onClick={() => void handleFacebookLogin()}
+                onClick={() => void handleGoogle()}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#1877F2] px-6 py-3 text-base font-medium text-white transition-colors hover:bg-[#166FE5] disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-black/[0.08] bg-white py-4 text-xs font-black uppercase tracking-widest text-ink shadow-sm transition-all hover:bg-surface-page hover:shadow-md disabled:opacity-50"
               >
-                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                </svg>
-                {loading ? "Đang xử lý..." : "Đăng nhập bằng Facebook"}
+                <Chrome className="h-5 w-5 text-blue-500" />
+                Ti?p t?c v?i Google
               </button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-100" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-4 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                    Ho?c email
+                  </span>
+                </div>
+              </div>
+
+              {emailSent ? (
+                <div className="space-y-4 py-4 text-center">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                    <CheckCircle2 className="h-8 w-8" />
+                  </div>
+                  <p className="text-sm font-black text-ink">Ki?m tra email c?a b?n</p>
+                  <p className="text-xs font-medium text-ink-muted">
+                    Ch?ng t?i ?? g?i li?n k?t ??ng nh?p. Ki?m tra h?p th? ??n ho?c th? m?c spam.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setEmailSent(false)}
+                    className="text-xs font-black uppercase tracking-widest text-accent hover:underline"
+                  >
+                    D?ng email kh?c
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={(e) => void handleMagicLink(e)} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="px-1 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className="w-full rounded-2xl border-none bg-surface-page py-4 pl-12 pr-4 text-sm font-semibold text-ink outline-none ring-1 ring-black/[0.06] transition-all focus:bg-white focus:ring-2 focus:ring-accent/30"
+                        placeholder="ban@example.com"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !email}
+                    className="ai-glow flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-4 text-xs font-black uppercase tracking-[0.15em] text-white shadow-lg shadow-accent/25 transition-all hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <>
+                        G?i li?n k?t ??ng nh?p
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
             </div>
-          </details>
-        ) : (
-          <div className="mt-10 border-t border-gray-100 pt-6">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
-              Đăng nhập bằng Facebook
-            </p>
-            <button
-              type="button"
-              onClick={() => void handleFacebookLogin()}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#1877F2] px-6 py-3 text-base font-medium text-white transition-colors hover:bg-[#166FE5] disabled:opacity-50"
-            >
-              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-              </svg>
-              {loading ? "Đang xử lý..." : "Đăng nhập bằng Facebook"}
-            </button>
+          ) : (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-6 text-center">
+              <AlertCircle className="h-10 w-10 text-amber-500" />
+              <p className="text-sm font-black text-ink">Ch?a c?u h?nh Supabase</p>
+              <p className="text-xs text-ink-muted">
+                Th?m NEXT_PUBLIC_SUPABASE_URL v? NEXT_PUBLIC_SUPABASE_ANON_KEY v?o .env ?? b?t ??ng nh?p Google v? email.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-10 flex items-center gap-4">
+            <div className="h-px flex-1 bg-slate-100" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">B?o m?t</span>
+            <div className="h-px flex-1 bg-slate-100" />
           </div>
-        )}
+
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 opacity-70">
+            <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <Lock className="h-3.5 w-3.5" />
+              Secure
+            </span>
+            <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              GDPR
+            </span>
+            <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <Zap className="h-3.5 w-3.5" />
+              Fast
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

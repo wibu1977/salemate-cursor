@@ -2,36 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --background: 210 20% 97%;
+  --foreground: 0 0% 10%;
+  
+  --primary: 11 100% 60%;
+  --primary-foreground: 0 0% 100%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  
+  --ring: 11 100% 60%;
+  
+  --radius: 1rem;
+}
+
 @layer base {
+  * {
+    @apply border-border;
+  }
   body {
-    @apply bg-white text-gray-900 antialiased;
+    @apply bg-surface-page text-ink antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "cv11", "ss01";
   }
 }
 
 @layer components {
-  .card {
-    @apply rounded-xl border border-gray-100 bg-white p-6 shadow-sm;
+  /* Glassmorphism */
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-lg;
   }
-  .btn-primary {
-    @apply rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-sm border border-black/[0.06] shadow-sm transition-all duration-300 hover:shadow-md hover:border-accent/25;
   }
-  .btn-secondary {
-    @apply rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+
+  /* Premium Cards */
+  .card-premium {
+    @apply relative overflow-hidden rounded-[1.75rem] bg-white p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-black/[0.05] transition-all duration-500 hover:translate-y-[-2px] hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)];
   }
-  .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+
+  /* Buttons */
+  .btn-premium {
+    @apply inline-flex items-center justify-center rounded-2xl bg-accent px-8 py-4 text-sm font-black text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-0.5 focus:outline-none active:scale-95 disabled:opacity-50 uppercase tracking-widest;
   }
-  .badge-success {
-    @apply badge bg-green-50 text-green-700;
+  
+  .btn-glass {
+    @apply inline-flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-md px-8 py-4 text-sm font-black text-slate-700 border border-slate-100 transition-all hover:bg-white active:scale-95 uppercase tracking-widest;
   }
-  .badge-warning {
-    @apply badge bg-amber-50 text-amber-700;
+
+  /* Status Badges */
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest;
   }
-  .badge-danger {
-    @apply badge bg-red-50 text-red-700;
-  }
-  .badge-info {
-    @apply badge bg-blue-50 text-blue-700;
-  }
+  
+  .badge-emerald { @apply status-badge bg-emerald-50 text-emerald-600 border border-emerald-100; }
+  .badge-violet { @apply status-badge bg-violet-50 text-violet-600 border border-violet-100; }
+  .badge-amber { @apply status-badge bg-amber-50 text-amber-600 border border-amber-100; }
+  .badge-rose { @apply status-badge bg-rose-50 text-rose-600 border border-rose-100; }
+}
+
+/* AI Glow Effect */
+.ai-glow {
+  position: relative;
+}
+.ai-glow::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, #FF5733, #FF8A65, #FF5733);
+  background-size: 200% 200%;
+  z-index: -1;
+  border-radius: inherit;
+  filter: blur(8px);
+  opacity: 0.2;
+  animation: shimmer 3s infinite linear;
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E2E8F0;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CBD5E1;
 }
