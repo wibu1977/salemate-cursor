@@ -29,11 +29,11 @@ export default function ConnectFacebookPage() {
   const runFacebookConnect = () => {
     const appId = (process.env.NEXT_PUBLIC_META_APP_ID || "").trim();
     if (!appId) {
-      setError("Thi?u NEXT_PUBLIC_META_APP_ID.");
+      setError("Thiếu NEXT_PUBLIC_META_APP_ID.");
       return;
     }
     if (typeof window === "undefined" || window.location.protocol !== "https:") {
-      setError("C?n HTTPS ?? d�ng Facebook SDK.");
+      setError("Cần HTTPS để dùng Facebook SDK.");
       return;
     }
     setError(null);
@@ -50,7 +50,7 @@ export default function ConnectFacebookPage() {
     void (async () => {
       await waitFb();
       if (!window.FB) {
-        setError("Facebook SDK ch?a t?i. T?t AdBlock v� t?i l?i trang.");
+        setError("Facebook SDK chưa tải. Tắt AdBlock và tải lại trang.");
         setLoading(false);
         return;
       }
@@ -58,7 +58,7 @@ export default function ConnectFacebookPage() {
       window.FB!.login(
         async (resp: { authResponse?: { accessToken: string }; status?: string }) => {
           if (!resp.authResponse?.accessToken) {
-            setError("Ch?a c� quy?n Facebook ho?c ?� h?y.");
+            setError("Chưa có quyền Facebook hoặc đã hủy.");
             setLoading(false);
             return;
           }
@@ -70,13 +70,13 @@ export default function ConnectFacebookPage() {
             const r = await fetch(url.toString());
             const data = (await r.json()) as { data?: FbPage[]; error?: { message: string } };
             if (data.error) {
-              setError(data.error.message || "Graph API l?i");
+              setError(data.error.message || "Graph API lỗi");
               setLoading(false);
               return;
             }
             setPages(data.data || []);
             if (!(data.data || []).length) {
-              setError("Kh�ng th?y Facebook Page n�o. B?n c?n qu?n tr? Page v� c?p quy?n pages_show_list.");
+              setError("Không thấy Facebook Page nào. Bạn cần quản trị Page và cấp quyền pages_show_list.");
             }
           } catch (e) {
             setError(formatApiError(e));
@@ -120,16 +120,16 @@ export default function ConnectFacebookPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.06] bg-white shadow-sm group-hover:bg-accent-soft">
             <ChevronLeft className="h-4 w-4" />
           </div>
-          V? DASHBOARD
+          VỀ DASHBOARD
         </Link>
 
         <div className="space-y-4">
           <div className="flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-accent text-white shadow-xl shadow-accent/25">
             <Facebook className="h-10 w-10" />
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-ink">K?t n?i Fanpage</h1>
+          <h1 className="text-4xl font-black tracking-tight text-ink">Kết nối Fanpage</h1>
           <p className="max-w-md text-lg font-medium text-ink-muted">
-            K�ch ho?t AI Sales Agent tr�n c�c k�nh b�n h�ng Facebook c?a b?n ch? v?i v�i c� click.
+            Kích hoạt AI Sales Agent trên các kênh bán hàng Facebook của bạn chỉ với vài cú click.
           </p>
         </div>
 
@@ -141,23 +141,23 @@ export default function ConnectFacebookPage() {
               <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
                 <BenefitItem
                   icon={<ShieldCheck className="h-6 w-6" />}
-                  title="B?o m?t tuy?t ??i"
-                  desc="D? li?u m� h�a 256-bit chu?n Meta Business."
+                  title="Bảo mật tuyệt đối"
+                  desc="Dữ liệu mã hóa 256-bit chuẩn Meta Business."
                 />
                 <BenefitItem
                   icon={<Zap className="h-6 w-6" />}
-                  title="K�ch ho?t t?c th�"
-                  desc="T? ??ng ??ng b? tin nh?n & kh�ch h�ng."
+                  title="Kích hoạt tức thì"
+                  desc="Tự động đồng bộ tin nhắn & khách hàng."
                 />
                 <BenefitItem
                   icon={<MessageSquare className="h-6 w-6" />}
                   title="AI Sales 24/7"
-                  desc="T? ??ng tr? l?i, ch?t ??n ngay c? khi b?n ng?."
+                  desc="Tự động trả lời, chốt đơn ngay cả khi bạn ngủ."
                 />
                 <BenefitItem
                   icon={<CheckCircle2 className="h-6 w-6" />}
-                  title="D? d�ng qu?n l�"
-                  desc="T?t c? Fanpage tr�n m?t dashboard duy nh?t."
+                  title="Dễ dàng quản lý"
+                  desc="Tất cả Fanpage trên một dashboard duy nhất."
                 />
               </div>
 
@@ -173,7 +173,7 @@ export default function ConnectFacebookPage() {
                   ) : (
                     <>
                       <Facebook className="h-6 w-6" />
-                      K?T N?I V?I FACEBOOK
+                      KẾT NỐI VỚI FACEBOOK
                     </>
                   )}
                 </button>
@@ -185,7 +185,7 @@ export default function ConnectFacebookPage() {
           ) : (
             <div className="relative space-y-8">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-black text-ink">Ch?n Page ?? k�ch ho?t</h3>
+                <h3 className="text-xl font-black text-ink">Chọn Page để kích hoạt</h3>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
                   {pages.length} PAGES FOUND
                 </span>
@@ -220,7 +220,7 @@ export default function ConnectFacebookPage() {
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
                       ) : (
                         <>
-                          K�CH HO?T
+                          KÍCH HOẠT
                           <ArrowRight className="h-4 w-4" />
                         </>
                       )}
@@ -234,7 +234,7 @@ export default function ConnectFacebookPage() {
                 onClick={() => setPages([])}
                 className="w-full text-center text-xs font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-accent"
               >
-                H?y v� l�m l?i
+                Hủy và làm lại
               </button>
             </div>
           )}
@@ -246,16 +246,16 @@ export default function ConnectFacebookPage() {
               <Info className="h-5 w-5" />
             </div>
             <div className="space-y-1">
-              <p className="text-xs font-black uppercase tracking-wider text-rose-900">C� l?i x?y ra</p>
+              <p className="text-xs font-black uppercase tracking-wider text-rose-900">Có lỗi xảy ra</p>
               <p className="text-sm font-medium text-rose-600">{error}</p>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-6 opacity-60 sm:grid-cols-3">
-          <FooterLabel icon={<Lock className="h-4 w-4" />} text="M� h�a d? li?u" />
+          <FooterLabel icon={<Lock className="h-4 w-4" />} text="Mã hóa dữ liệu" />
           <FooterLabel icon={<ShieldCheck className="h-4 w-4" />} text="Meta Verified App" />
-          <FooterLabel icon={<ExternalLink className="h-4 w-4" />} text="Tu�n th? GDPR" />
+          <FooterLabel icon={<ExternalLink className="h-4 w-4" />} text="Tuân thủ GDPR" />
         </div>
       </div>
     </div>
