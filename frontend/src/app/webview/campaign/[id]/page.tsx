@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { 
   Rocket, 
-  Target, 
   MessageSquare, 
   CheckCircle2, 
   RotateCcw, 
@@ -14,8 +13,6 @@ import {
   AlertCircle,
   Users,
   Send,
-  Eye,
-  Trophy
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -177,7 +174,7 @@ function CampaignWebviewContent() {
 
           <div className="relative bg-slate-50/50 rounded-3xl p-6 border border-slate-50">
              <p className="text-sm font-medium text-slate-700 leading-relaxed whitespace-pre-wrap italic">
-               "{data.message_template}"
+               &ldquo;{data.message_template}&rdquo;
              </p>
           </div>
 

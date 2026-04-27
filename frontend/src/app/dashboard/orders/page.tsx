@@ -8,22 +8,15 @@ import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
 import { 
   Search, 
-  Filter, 
   Eye, 
   CheckCircle2, 
   XCircle, 
-  AlertTriangle,
   Clock,
-  ExternalLink,
   ChevronRight,
   ShoppingBag,
   User,
   CreditCard,
   MapPin,
-  FileText,
-  Zap,
-  MoreHorizontal,
-  ArrowUpRight,
   ShieldCheck,
   TrendingUp,
   Package,
@@ -35,6 +28,8 @@ interface OrderItem {
   quantity: number;
   subtotal: number;
 }
+
+type FraudLog = { check_type: string; result: string; details: string };
 
 interface OrderData {
   id: string;
@@ -48,7 +43,7 @@ interface OrderData {
   payment_method?: string;
   bill_image_url?: string;
   items?: OrderItem[];
-  fraud_logs?: { check_type: string; result: string; details: string }[];
+  fraud_logs?: FraudLog[];
 }
 
 const FILTER_OPTIONS = [
@@ -92,8 +87,11 @@ export default function OrdersPage() {
     if (!orders) return { total: 0, pending: 0, revenue: 0 };
     return {
       total: orders.length,
-      pending: orders.filter((o: any) => o.status === "flagged").length,
-      revenue: orders.reduce((acc: number, o: any) => acc + (o.status === "completed" ? o.total_amount : 0), 0)
+      pending: orders.filter((o: OrderData) => o.status === "flagged").length,
+      revenue: orders.reduce(
+        (acc: number, o: OrderData) => acc + (o.status === "completed" ? o.total_amount : 0),
+        0
+      ),
     };
   }, [orders]);
 
@@ -101,7 +99,12 @@ export default function OrdersPage() {
     mutationFn: ({ id, action }: { id: string; action: string }) =>
       dashboardApi.orderAction(id, action),
     onSuccess: (_, { action }) => {
-      toast(action === "approve" ? "??n h?ng ?? ???c duy?t th?nh c?ng" : "?? t? ch?i ??n h?ng", "success");
+      toast(
+        action === "approve"
+          ? "??n h?ng ?? ???c duy?t th?nh c?ng"
+          : "?? t? ch?i ??n h?ng",
+        "success"
+      );
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["order-detail", selectedId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
@@ -115,7 +118,9 @@ export default function OrdersPage() {
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-4xl font-black tracking-tight text-ink">Qu?n l? ??n h?ng</h1>
-          <p className="mt-2 text-base font-medium text-ink-muted">Gi?m s?t giao d?ch v? x? l? ph? duy?t thanh to?n AI theo th?i gian th?c</p>
+          <p className="mt-2 text-base font-medium text-ink-muted">
+            Gi?m s?t giao d?ch v? x? l? ph? duy?t thanh to?n AI theo th?i gian th?c
+          </p>
         </div>
         
         {/* Search Bar */}
@@ -273,7 +278,9 @@ export default function OrdersPage() {
                               </div>
                               <div className="space-y-2">
                                 <p className="text-lg font-black text-slate-900 uppercase tracking-widest">Kh?ng t?m th?y k?t qu?</p>
-                                <p className="text-sm font-medium leading-relaxed text-slate-400">Ch?ng t?i kh?ng t?m th?y ??n h?ng n?o kh?p v?i t?m ki?m c?a b?n. Th? d?ng t? kh?a kh?c ho?c x?a b? l?c.</p>
+                                <p className="text-sm font-medium leading-relaxed text-slate-400">
+                                  Ch?ng t?i kh?ng t?m th?y ??n h?ng n?o kh?p v?i t?m ki?m c?a b?n. Th? d?ng t? kh?a kh?c ho?c x?a b? l?c.
+                                </p>
                               </div>
                               {searchQuery && (
                                 <button 
@@ -379,7 +386,7 @@ export default function OrdersPage() {
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">AI Trust Analysis</h4>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {detail.fraud_logs.map((log: any, i: number) => (
+                    {detail.fraud_logs.map((log: FraudLog, i: number) => (
                       <div key={i} className="flex flex-col gap-4 rounded-3xl border border-slate-100 bg-white p-6 shadow-sm transition-all hover:shadow-xl hover:shadow-slate-100/50 hover:-translate-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">{log.check_type}</span>
@@ -423,7 +430,9 @@ export default function OrdersPage() {
                       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent/70">
                         <MapPin className="h-3.5 w-3.5" />
                       </div>
-                      <span className="font-bold leading-relaxed opacity-80">{detail.customer_address || "Ch?a cung c?p ??a ch?"}</span>
+                      <span className="font-bold leading-relaxed opacity-80">
+                        {detail.customer_address || "Ch?a cung c?p ??a ch?"}
+                      </span>
                     </div>
                     <div className="flex gap-4">
                       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent/70">
@@ -431,7 +440,9 @@ export default function OrdersPage() {
                       </div>
                       <div className="flex flex-col">
                         <span className="font-black uppercase tracking-widest text-accent-muted">Ph??ng th?c</span>
-                        <span className="font-bold opacity-80">{detail.payment_method || "Chuy?n kho?n ng?n h?ng"}</span>
+                        <span className="font-bold opacity-80">
+                          {detail.payment_method || "Chuy?n kho?n ng?n h?ng"}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -481,7 +492,9 @@ export default function OrdersPage() {
                     <XCircle className="h-6 w-6" />
                     <span className="uppercase tracking-[0.2em]">T? CH?I GIAO D?CH</span>
                   </button>
-                  <p className="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">H?nh ð?ng n?y không th? ho?n tác</p>
+                  <p className="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    H?nh ??ng n?y kh?ng th? ho?n t?c
+                  </p>
                 </div>
               )}
             </div>

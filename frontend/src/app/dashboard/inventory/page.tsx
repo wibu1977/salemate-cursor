@@ -7,23 +7,18 @@ import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
 import { 
-  Package, 
   Plus, 
   RefreshCw, 
   Table as TableIcon, 
   Search, 
-  MoreHorizontal, 
   Edit3, 
-  TrendingDown, 
   Box,
   Image as ImageIcon,
-  ChevronRight,
   Filter,
   DollarSign,
   AlertCircle,
   CheckCircle2,
   ExternalLink,
-  ArrowRight,
   Layers
 } from "lucide-react";
 
@@ -79,43 +74,43 @@ export default function InventoryPage() {
     if (!products) return { total: 0, lowStock: 0, totalValue: 0 };
     return {
       total: products.length,
-      lowStock: products.filter((p: any) => p.quantity <= p.stock_threshold).length,
-      totalValue: products.reduce((acc: number, p: any) => acc + (p.price * p.quantity), 0)
+      lowStock: products.filter((p: ProductData) => p.quantity <= p.stock_threshold).length,
+      totalValue: products.reduce((acc: number, p: ProductData) => acc + (p.price * p.quantity), 0)
     };
   }, [products]);
 
   const createMutation = useMutation({
     mutationFn: (data: typeof EMPTY_FORM) => inventoryApi.createProduct(data),
     onSuccess: () => {
-      toast("S?n ph?m �? t?o th?nh c�ng", "success");
+      toast("Sản phẩm đã tạo thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowCreate(false);
       setForm(EMPTY_FORM);
     },
-    onError: () => toast("T?o s?n ph?m th?t b?i", "error"),
+    onError: () => toast("Tạo sản phẩm thất bại", "error"),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       inventoryApi.updateProduct(id, data),
     onSuccess: () => {
-      toast("C?p nh?t s?n ph?m th?nh c�ng", "success");
+      toast("Cập nhật sản phẩm thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setEditProduct(null);
     },
-    onError: () => toast("C?p nh?t th?t b?i", "error"),
+    onError: () => toast("Cập nhật thất bại", "error"),
   });
 
   const syncMutation = useMutation({
     mutationFn: () => inventoryApi.syncSheets(sheetId),
     onSuccess: (res) => {
       const d = res.data;
-      toast(`�?ng b??ho?n t?t: ${d.created} m?i, ${d.updated} c?p nh?t`, "success");
+      toast(`Đồng bộ hoàn tất: ${d.created} mới, ${d.updated} cập nhật`, "success");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowSync(false);
       setSheetId("");
     },
-    onError: () => toast("�?ng b??d??li?u th?t b?i", "error"),
+    onError: () => toast("Đồng bộ dữ liệu thất bại", "error"),
   });
 
   const openEdit = (p: ProductData) => {
@@ -141,8 +136,8 @@ export default function InventoryPage() {
       {/* Header Section */}
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-slate-900">Qu?n l� Kho h?ng</h1>
-          <p className="mt-2 text-base font-medium text-slate-500">Ki?m so�t t?n kho v? t??�?ng h�a �?ng b??v?i Google Sheets</p>
+          <h1 className="text-4xl font-black tracking-tight text-slate-900">Quản lý kho hàng</h1>
+          <p className="mt-2 text-base font-medium text-slate-500">Kiểm soát tồn kho và tự động đồng bộ với Google Sheets</p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <button 
@@ -150,14 +145,14 @@ export default function InventoryPage() {
             className="group flex items-center gap-3 rounded-2xl bg-white px-6 py-3.5 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:ring-accent/25 active:scale-95"
           >
             <RefreshCw className={`h-5 w-5 text-accent group-hover:rotate-180 transition-transform duration-500 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-            �?NG B??SHEETS
+            ĐỒNG BỘ SHEETS
           </button>
           <button 
             onClick={openCreate} 
             className="flex items-center gap-3 rounded-2xl bg-accent px-6 py-3.5 text-sm font-black text-white shadow-xl shadow-accent/15 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95"
           >
             <Plus className="h-5 w-5" />
-            TH?M S?N PH?M
+            THÊM SẢN PHẨM
           </button>
         </div>
       </div>
@@ -173,8 +168,8 @@ export default function InventoryPage() {
                   <TableIcon className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900">K?t n?i Google Sheets</h3>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">S??d?ng ID trang t�nh �??nh?p d??li?u h?ng lo?t</p>
+                  <h3 className="text-lg font-black text-slate-900">Kết nối Google Sheets</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sử dụng ID trang tính để nhập dữ liệu hàng loạt</p>
                 </div>
               </div>
               <div className="relative">
@@ -182,7 +177,7 @@ export default function InventoryPage() {
                   type="text"
                   value={sheetId}
                   onChange={(e) => setSheetId(e.target.value)}
-                  placeholder="Nh?p Google Spreadsheet ID (v� d?? 1BxiMVs0XRA5...)"
+                  placeholder="Nhập Google Spreadsheet ID (ví dụ: 1BxiMVs0XRA5...)"
                   className="w-full rounded-2xl border-none bg-slate-50 py-4 pl-6 pr-4 text-sm font-semibold shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
@@ -199,9 +194,10 @@ export default function InventoryPage() {
                 {syncMutation.isPending ? (
                   <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
                 ) : <RefreshCw className="h-5 w-5" />}
-                B?T �?U �?NG B??              </button>
+                BẮT ĐẦU ĐỒNG BỘ
+              </button>
               <a href="#" className="flex items-center justify-center gap-2 text-xs font-bold text-accent hover:underline">
-                H??ng d?n �?nh d?ng t?p <ExternalLink className="h-3 w-3" />
+                Hướng dẫn định dạng tệp <ExternalLink className="h-3 w-3" />
               </a>
             </div>
           </div>
@@ -216,7 +212,7 @@ export default function InventoryPage() {
               <Layers className="h-7 w-7" />
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">T?ng s?n ph?m</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tổng sản phẩm</p>
               <p className="text-3xl font-black text-slate-900">{stats.total}</p>
             </div>
           </div>
@@ -227,7 +223,7 @@ export default function InventoryPage() {
               <AlertCircle className="h-7 w-7" />
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500/70">S?p h?t h?ng</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500/70">Sắp hết hàng</p>
               <p className="text-3xl font-black text-slate-900">{stats.lowStock}</p>
             </div>
           </div>
@@ -238,7 +234,7 @@ export default function InventoryPage() {
               <DollarSign className="h-7 w-7" />
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent/70">T?ng gi� tr??kho</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent/70">Tổng giá trị kho</p>
               <p className="text-3xl font-black text-slate-900">{formatCurrency(stats.totalValue)}</p>
             </div>
           </div>
@@ -254,7 +250,7 @@ export default function InventoryPage() {
             </div>
             <input
               type="text"
-              placeholder="T?m theo t?n, ID, danh m?c..."
+              placeholder="Tìm theo tên, ID, danh mục..."
               className="w-full rounded-2xl border-none bg-white py-3.5 pl-12 pr-4 text-sm font-semibold shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-accent"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -263,7 +259,7 @@ export default function InventoryPage() {
           <div className="flex items-center gap-3">
             <button className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50">
               <Filter className="h-4 w-4" />
-              L?C DANH M?C
+              LỌC DANH MỤC
             </button>
           </div>
         </div>
@@ -273,11 +269,11 @@ export default function InventoryPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">S?n ph?m</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Danh m?c</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Gi� b�n</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">T?n kho</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tr?ng th�i</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sản phẩm</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Danh mục</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Giá bán</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tồn kho</th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Trạng thái</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"></th>
                 </tr>
               </thead>
@@ -323,8 +319,8 @@ export default function InventoryPage() {
                             <td className="px-8 py-6">
                               <div className="flex flex-col gap-2 min-w-[120px]">
                                 <div className="flex items-center justify-between">
-                                  <span className={`text-sm font-black ${isLowStock ? 'text-rose-600' : 'text-slate-900'}`}>{p.quantity} <span className="text-[10px] text-slate-400 font-bold uppercase">�v</span></span>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase">Ng??ng: {p.stock_threshold}</span>
+                                  <span className={`text-sm font-black ${isLowStock ? 'text-rose-600' : 'text-slate-900'}`}>{p.quantity} <span className="text-[10px] text-slate-400 font-bold uppercase">đv</span></span>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase">Ngưỡng: {p.stock_threshold}</span>
                                 </div>
                                 <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                                   <div 
@@ -338,12 +334,12 @@ export default function InventoryPage() {
                               {isLowStock ? (
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3.5 py-1.5 text-[10px] font-black text-rose-600 ring-1 ring-rose-200">
                                   <div className="h-1.5 w-1.5 rounded-full bg-rose-600 animate-pulse" />
-                                  S?P H?T
+                                  SẮP HẾT
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3.5 py-1.5 text-[10px] font-black text-emerald-600 ring-1 ring-emerald-200">
                                   <CheckCircle2 className="h-3 w-3" />
-                                  C?N H?NG
+                                  CÒN HÀNG
                                 </span>
                               )}
                             </td>
@@ -366,10 +362,10 @@ export default function InventoryPage() {
                               <Box className="h-10 w-10" />
                             </div>
                             <div className="space-y-2">
-                              <p className="text-lg font-black text-slate-900 uppercase tracking-widest">Kho h?ng �ang tr?ng</p>
-                              <p className="text-sm font-medium text-slate-400 leading-relaxed">B?t �?u b?ng c�ch th?m s?n ph?m m?i ho?c �?ng b??h�a v?i Google Sheets.</p>
+                              <p className="text-lg font-black text-slate-900 uppercase tracking-widest">Kho hàng đang trống</p>
+                              <p className="text-sm font-medium text-slate-400 leading-relaxed">Bắt đầu bằng cách thêm sản phẩm mới hoặc đồng bộ hóa với Google Sheets.</p>
                             </div>
-                            <button onClick={openCreate} className="btn-premium px-8">T?O S?N PH?M �?U TI?N</button>
+                            <button onClick={openCreate} className="btn-premium px-8">TẠO SẢN PHẨM ĐẦU TIÊN</button>
                           </div>
                         </td>
                       </tr>
@@ -384,25 +380,25 @@ export default function InventoryPage() {
       <Modal
         open={showCreate || !!editProduct}
         onClose={() => { setShowCreate(false); setEditProduct(null); }}
-        title={editProduct ? "CH?NH S?A S?N PH?M" : "S?N PH?M M?I"}
+        title={editProduct ? "CHỈNH SỬA SẢN PHẨM" : "SẢN PHẨM MỚI"}
         size="lg"
       >
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           {/* Left Column: Visuals */}
           <div className="lg:col-span-5 space-y-8">
             <div className="space-y-4">
-              <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 px-2">H?nh ?nh �?i di?n</h4>
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 px-2">Hình ảnh đại diện</h4>
               <div className="group relative aspect-square w-full overflow-hidden rounded-[2.5rem] border-8 border-slate-50 bg-slate-100 shadow-2xl shadow-slate-200 transition-all hover:shadow-accent/15/50">
                 {form.image_url ? (
                   <img src={form.image_url} alt="Preview" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-4 text-slate-300">
                     <ImageIcon className="h-16 w-16" />
-                    <p className="text-xs font-black uppercase tracking-widest">Ch?a c� ?nh</p>
+                    <p className="text-xs font-black uppercase tracking-widest">Chưa có ảnh</p>
                   </div>
                 )}
                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <span className="text-xs font-black text-white border-2 border-white/50 rounded-full px-6 py-2 backdrop-blur-sm">C?P NH?T ?NH</span>
+                  <span className="text-xs font-black text-white border-2 border-white/50 rounded-full px-6 py-2 backdrop-blur-sm">CẬP NHẬT ẢNH</span>
                 </div>
               </div>
             </div>
@@ -410,11 +406,11 @@ export default function InventoryPage() {
             <div className="rounded-3xl bg-accent-soft/50 p-6 space-y-4">
               <div className="flex items-center gap-3 text-accent">
                 <AlertCircle className="h-5 w-5" />
-                <h5 className="text-xs font-black uppercase tracking-widest">G?i � AI cho Kho</h5>
+                <h5 className="text-xs font-black uppercase tracking-widest">Gợi ý AI cho kho</h5>
               </div>
               <p className="text-xs font-bold leading-relaxed text-slate-600">
-                S?n ph?m n?y c? nhu c?u cao v?o cu?i tu?n. H?y c?n nh?c ??t ng??ng c?nh b?o t?n kho ? m?c{" "}
-                <strong>15 ??n v?</strong> ?? tr?nh gi?n ?o?n kinh doanh.
+                Sản phẩm này có nhu cầu cao vào cuối tuần. Hãy cân nhắc đặt ngưỡng cảnh báo tồn kho ở mức{" "}
+                <strong>15 đơn vị</strong> để tránh gián đoạn kinh doanh.
               </p>
             </div>
           </div>
@@ -423,22 +419,22 @@ export default function InventoryPage() {
           <div className="lg:col-span-7 space-y-8">
             <div className="space-y-6">
               <Field 
-                label="T?n s?n ph?m" 
+                label="Tên sản phẩm" 
                 value={form.name} 
                 onChange={(v) => setForm({ ...form, name: v })} 
-                placeholder="V� d?? C?m Cu?n H?n Qu?c - Kimchi"
+                placeholder="Ví dụ: Cơm cuộn Hàn Quốc - Kimchi"
                 icon={<Box className="h-5 w-5" />}
               />
               
               <div className="grid grid-cols-2 gap-6">
                 <Field 
-                  label="Danh m?c" 
+                  label="Danh mục" 
                   value={form.category} 
                   onChange={(v) => setForm({ ...form, category: v })} 
-                  placeholder="Th?c ph?m"
+                  placeholder="Thực phẩm"
                 />
                 <Field 
-                  label="Gi� b�n (KRW)" 
+                  label="Giá bán (KRW)" 
                   value={String(form.price)} 
                   onChange={(v) => setForm({ ...form, price: Number(v) || 0 })} 
                   type="number" 
@@ -448,13 +444,13 @@ export default function InventoryPage() {
 
               <div className="grid grid-cols-2 gap-6">
                 <Field 
-                  label="T?n kho hi?n t?i" 
+                  label="Tồn kho hiện tại" 
                   value={String(form.quantity)} 
                   onChange={(v) => setForm({ ...form, quantity: Number(v) || 0 })} 
                   type="number" 
                 />
                 <Field 
-                  label="Ng??ng c?nh b�o" 
+                  label="Ngưỡng cảnh báo" 
                   value={String(form.stock_threshold)} 
                   onChange={(v) => setForm({ ...form, stock_threshold: Number(v) || 0 })} 
                   type="number" 
@@ -462,15 +458,15 @@ export default function InventoryPage() {
               </div>
 
               <Field 
-                label="M� t??s?n ph?m" 
+                label="Mô tả sản phẩm" 
                 value={form.description} 
                 onChange={(v) => setForm({ ...form, description: v })} 
                 isTextArea
-                placeholder="Chi ti?t v??th?nh ph?n, h??ng v??.."
+                placeholder="Chi tiết về thành phần, hương vị..."
               />
 
               <Field 
-                label="�??ng d?n ?nh (URL)" 
+                label="Đường dẫn ảnh (URL)" 
                 value={form.image_url} 
                 onChange={(v) => setForm({ ...form, image_url: v })} 
                 placeholder="https://images.unsplash.com/photo-..."
@@ -483,7 +479,8 @@ export default function InventoryPage() {
                 onClick={() => { setShowCreate(false); setEditProduct(null); }}
                 className="flex-1 rounded-2xl bg-white border-2 border-slate-100 py-4 text-sm font-black text-slate-500 transition-all hover:bg-slate-50 active:scale-95 uppercase tracking-widest"
               >
-                H?y b??              </button>
+                Hủy bỏ
+              </button>
               <button
                 onClick={() => {
                   if (editProduct) {
@@ -495,7 +492,7 @@ export default function InventoryPage() {
                 disabled={!form.name || createMutation.isPending || updateMutation.isPending}
                 className="ai-glow flex-[2] rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
               >
-                {createMutation.isPending || updateMutation.isPending ? "�ANG L?U..." : editProduct ? "L?u thay �?i" : "T?o s?n ph?m"}
+                {createMutation.isPending || updateMutation.isPending ? "ĐANG LƯU..." : editProduct ? "Lưu thay đổi" : "Tạo sản phẩm"}
               </button>
             </div>
           </div>
