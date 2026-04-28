@@ -47,16 +47,67 @@ interface OrderData {
 }
 
 const FILTER_OPTIONS = [
-  { label: "T?t c?", value: "" },
-  { label: "C?n duy?t", value: "flagged" },
-  { label: "Ho?n t?t", value: "completed" },
-  { label: "Ð? h?y", value: "cancelled" },
+  { label: "T\u1ea5t c\u1ea3", value: "" },
+  { label: "C\u1ea7n duy\u1ec7t", value: "flagged" },
+  { label: "Ho\u00e0n t\u1ea5t", value: "completed" },
+  { label: "\u0110\u00e3 h\u1ee7y", value: "cancelled" },
 ];
 
-/** Ð?n ð??c tính doanh thu (ð? ho?n th?nh ho?c ð? xác nh?n). */
 function isRevenueStatus(status: string) {
   return status === "completed" || status === "confirmed";
 }
+
+/** UI strings via \\u escapes ? valid UTF-8 in any editor; avoids Docker/Linux build errors. */
+const STR = {
+  manageTitle: "Qu\u1ea3n l\u00fd \u0111\u01a1n h\u00e0ng",
+  manageSubtitle:
+    "Theo d\u00f5i giao d\u1ecbch v\u00e0 duy\u1ec7t thanh to\u00e1n (AI) theo th\u1eddi gian th\u1ef1c",
+  searchPlaceholder: "T\u00ecm theo m\u00e3 \u0111\u01a1n, t\u00ean, s\u1ed1 \u0111i\u1ec7n tho\u1ea1i...",
+  totalOrders: "T\u1ed5ng \u0111\u01a1n h\u00e0ng",
+  pendingApproval: "Ch\u1edd ph\u00ea duy\u1ec7t",
+  revenueClosed: "Doanh thu (\u0111\u00e3 \u0111\u00f3ng)",
+  today: "H\u00d4M NAY",
+  colTransaction: "Giao d\u1ecbch",
+  colCustomer: "Kh\u00e1ch h\u00e0ng",
+  colTotal: "T\u1ed5ng ti\u1ec1n",
+  colStatus: "Tr\u1ea1ng th\u00e1i",
+  colTime: "Th\u1eddi gian",
+  anonymous: "Kh\u00e1ch \u1ea9n danh",
+  noResults: "Kh\u00f4ng t\u00ecm th\u1ea5y k\u1ebft qu\u1ea3",
+  noResultsHint:
+    "Kh\u00f4ng c\u00f3 \u0111\u01a1n n\u00e0o kh\u1edbp v\u1edbi b\u1ed9 l\u1ecd\u0063 ho\u1eb7c t\u1eeb kh\u00f3a. Th\u1eed t\u1eeb kh\u00f3a kh\u00e1c ho\u1eb7c \u0111\u1ed5i b\u1ed9 l\u1ecd\u0063.",
+  clearSearch: "X\u00d3A T\u00ccM KI\u1ebeM",
+  modalTitle: "Chi ti\u1ebft \u0111\u01a1n h\u00e0ng",
+  loading: "\u0110ang t\u1ea3i d\u1eef li\u1ec7u...",
+  txCode: "M\u00e3 giao d\u1ecbch",
+  orderItems: "Chi ti\u1ebft s\u1ea3n ph\u1ea9m",
+  itemsCount: "m\u1eb7t h\u00e0ng",
+  perUnit: "/ \u0111\u01a1n v\u1ecb",
+  subtotalLabel: "T\u1ea1m t\u00ednh",
+  shippingLabel: "Ph\u00ed v\u1eadn chuy\u1ec3n",
+  freeShip: "MI\u1ec5N PH\u00cd",
+  grandTotal: "T\u1ed5ng c\u1ed9ng",
+  fraudTitle: "Ki\u1ec3m tra \u0111\u1ed9 tin c\u1eady (AI)",
+  fraudPass: "\u0110\u1ea1t",
+  fraudReject: "T\u1eeb ch\u1ed1i",
+  fraudFlag: "C\u1ea3nh b\u00e1o",
+  customerInfo: "Th\u00f4ng tin kh\u00e1ch h\u00e0ng",
+  missingAddress:
+    "\u0043\u0068\u01b0\u0061 cung c\u1ea5p \u0111\u1ecb\u0061 \u0063\u0068\u1ec9",
+  paymentMethod: "Ph\u01b0\u01a1ng th\u1ee9c",
+  bankDefault: "Chuy\u1ec3n kho\u1ea3n",
+  receiptProof: "Minh ch\u1ee9ng thanh to\u00e1n",
+  verifiedAi: "\u0110\u00c3 X\u00c1C MINH AI",
+  receiptAlt: "Bi\u00ean lai thanh to\u00e1n",
+  viewFullImage: "XEM \u1ea2NH G\u1ed0C",
+  clickDetail: "Nh\u1ea5n \u0111\u1ec3 xem chi ti\u1ebft",
+  approveOrder: "PH\u00ca DUY\u1ec6T \u0110\u01a0N H\u00c0NG",
+  rejectTx: "T\u1eea CH\u1ed0I GIAO D\u1eccCH",
+  actionIrreversible: "H\u00e0nh \u0111\u1ed9ng n\u00e0y kh\u00f4ng th\u1ec3 ho\u00e0n t\u00e1c",
+  toastApproved: "\u0110\u01a1n h\u00e0ng \u0111\u00e3 \u0111\u01b0\u1ee3c duy\u1ec7t th\u00e0nh c\u00f4ng",
+  toastRejected: "\u0110\u00e3 t\u1eeb ch\u1ed1i \u0111\u01a1n h\u00e0ng",
+  toastActionFail: "Thao t\u00e1c x\u1eed l\u00fd th\u1ea5t b\u1ea1i",
+} as const;
 
 export default function OrdersPage() {
   const queryClient = useQueryClient();
@@ -106,24 +157,22 @@ export default function OrdersPage() {
       dashboardApi.orderAction(id, action),
     onSuccess: (_, { action }) => {
       toast(
-        action === "approve" ? "Ð?n h?ng ð? ð??c duy?t th?nh công" : "Ð? t? ch?i ð?n h?ng",
+        action === "approve" ? STR.toastApproved : STR.toastRejected,
         "success"
       );
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["order-detail", selectedId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
-    onError: () => toast("Thao tác x? lý th?t b?i", "error"),
+    onError: () => toast(STR.toastActionFail, "error"),
   });
 
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-4xl font-black tracking-tight text-ink">Qu?n lý ð?n h?ng</h1>
-          <p className="mt-2 text-base font-medium text-ink-muted">
-            Theo d?i giao d?ch v? duy?t thanh toán (AI) theo th?i gian th?c
-          </p>
+          <h1 className="text-4xl font-black tracking-tight text-ink">{STR.manageTitle}</h1>
+          <p className="mt-2 text-base font-medium text-ink-muted">{STR.manageSubtitle}</p>
         </div>
 
         <div className="relative w-full max-w-md">
@@ -132,7 +181,7 @@ export default function OrdersPage() {
           </div>
           <input
             type="text"
-            placeholder="T?m theo m? ð?n, t?n, s? ði?n tho?i..."
+            placeholder={STR.searchPlaceholder}
             className="h-auto w-full rounded-2xl border-none bg-white py-3.5 pl-12 pr-4 text-sm font-semibold shadow-sm shadow-slate-200 outline-none ring-1 ring-slate-200 transition-all focus:shadow-md focus:ring-2 focus:ring-accent"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -146,7 +195,9 @@ export default function OrdersPage() {
             <Package className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-slate-400">T?ng ð?n h?ng</p>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+              {STR.totalOrders}
+            </p>
             <p className="text-2xl font-black text-slate-900">{stats.total}</p>
           </div>
         </div>
@@ -156,7 +207,7 @@ export default function OrdersPage() {
           </div>
           <div>
             <p className="text-xs font-black uppercase tracking-widest text-amber-600/60">
-              Ch? ph? duy?t
+              {STR.pendingApproval}
             </p>
             <p className="text-2xl font-black text-slate-900">{stats.pending}</p>
           </div>
@@ -166,7 +217,9 @@ export default function OrdersPage() {
             <TrendingUp className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600/60">Doanh thu (ð? ðóng)</p>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-600/60">
+              {STR.revenueClosed}
+            </p>
             <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.revenue)}</p>
           </div>
         </div>
@@ -196,7 +249,7 @@ export default function OrdersPage() {
             className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50"
           >
             <Calendar className="h-4 w-4" />
-            HÔM NAY
+            {STR.today}
           </button>
         </div>
 
@@ -206,19 +259,19 @@ export default function OrdersPage() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    Giao d?ch
+                    {STR.colTransaction}
                   </th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    Khách h?ng
+                    {STR.colCustomer}
                   </th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    T?ng ti?n
+                    {STR.colTotal}
                   </th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    Tr?ng thái
+                    {STR.colStatus}
                   </th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                    Th?i gian
+                    {STR.colTime}
                   </th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400" />
                 </tr>
@@ -266,10 +319,10 @@ export default function OrdersPage() {
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="text-sm font-black text-slate-900">
-                                    {o.customer_name || "Khách ?n danh"}
+                                    {o.customer_name || STR.anonymous}
                                   </span>
                                   <span className="text-[10px] font-bold text-slate-400">
-                                    {o.customer_phone || "?"}
+                                    {o.customer_phone || "-"}
                                   </span>
                                 </div>
                               </div>
@@ -311,11 +364,10 @@ export default function OrdersPage() {
                               </div>
                               <div className="space-y-2">
                                 <p className="text-lg font-black uppercase tracking-widest text-slate-900">
-                                  Không t?m th?y k?t qu?
+                                  {STR.noResults}
                                 </p>
                                 <p className="text-sm font-medium leading-relaxed text-slate-400">
-                                  Không có ð?n n?o kh?p v?i b? l?c ho?c t? khóa. Th? t? khóa khác ho?c
-                                  ð?i b? l?c.
+                                  {STR.noResultsHint}
                                 </p>
                               </div>
                               {searchQuery && (
@@ -324,7 +376,7 @@ export default function OrdersPage() {
                                   onClick={() => setSearchQuery("")}
                                   className="text-xs font-black text-accent hover:underline"
                                 >
-                                  XÓA T?M KI?M
+                                  {STR.clearSearch}
                                 </button>
                               )}
                             </div>
@@ -337,12 +389,12 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="Chi ti?t ð?n h?ng" size="lg">
+      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title={STR.modalTitle} size="lg">
         {detailLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="h-14 w-14 animate-spin rounded-full border-4 border-accent border-t-transparent shadow-xl" />
             <p className="mt-6 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-              Ðang t?i d? li?u...
+              {STR.loading}
             </p>
           </div>
         ) : detail ? (
@@ -355,7 +407,7 @@ export default function OrdersPage() {
                   </div>
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-                      M? giao d?ch
+                      {STR.txCode}
                     </span>
                     <h3 className="text-4xl font-black text-slate-900">{detail.memo_code}</h3>
                   </div>
@@ -379,10 +431,12 @@ export default function OrdersPage() {
                   <div className="flex items-center gap-2">
                     <Package className="h-5 w-5 text-slate-900" />
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                      Chi ti?t s?n ph?m
+                      {STR.orderItems}
                     </h4>
                   </div>
-                  <span className="text-xs font-bold text-slate-400">{detail.items?.length || 0} m?t h?ng</span>
+                  <span className="text-xs font-bold text-slate-400">
+                    {detail.items?.length || 0} {STR.itemsCount}
+                  </span>
                 </div>
                 <div className="rounded-[2.5rem] border border-slate-100 bg-slate-50/40 p-8">
                   <div className="space-y-6">
@@ -395,7 +449,7 @@ export default function OrdersPage() {
                           <div>
                             <p className="text-base font-black text-slate-900">{item.product_name}</p>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                              {formatCurrency(item.subtotal / (item.quantity || 1))} / ð?n v?
+                              {formatCurrency(item.subtotal / (item.quantity || 1))} {STR.perUnit}
                             </p>
                           </div>
                         </div>
@@ -408,16 +462,16 @@ export default function OrdersPage() {
 
                   <div className="mt-10 space-y-4 border-t border-slate-200/60 pt-8">
                     <div className="flex items-center justify-between px-2 text-xs font-bold text-slate-500">
-                      <span className="uppercase tracking-widest">T?m tính</span>
+                      <span className="uppercase tracking-widest">{STR.subtotalLabel}</span>
                       <span>{formatCurrency(detail.total_amount)}</span>
                     </div>
                     <div className="flex items-center justify-between px-2 text-xs font-bold text-slate-500">
-                      <span className="uppercase tracking-widest">Phí v?n chuy?n</span>
-                      <span className="text-emerald-600">MI?N PHÍ</span>
+                      <span className="uppercase tracking-widest">{STR.shippingLabel}</span>
+                      <span className="text-emerald-600">{STR.freeShip}</span>
                     </div>
                     <div className="flex items-center justify-between px-2 pt-4">
                       <span className="text-base font-black uppercase tracking-[0.2em] text-slate-400">
-                        T?ng c?ng
+                        {STR.grandTotal}
                       </span>
                       <span className="text-4xl font-black text-accent drop-shadow-sm">
                         {formatCurrency(detail.total_amount)}
@@ -434,7 +488,7 @@ export default function OrdersPage() {
                       <ShieldCheck className="h-5 w-5" />
                     </div>
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                      Ki?m tra ð? tin c?y (AI)
+                      {STR.fraudTitle}
                     </h4>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -457,11 +511,11 @@ export default function OrdersPage() {
                             }`}
                           >
                             {log.result === "pass"
-                              ? "Ð?t"
+                              ? STR.fraudPass
                               : log.result === "reject"
-                                ? "T? ch?i"
+                                ? STR.fraudReject
                                 : log.result === "flag"
-                                  ? "C?nh báo"
+                                  ? STR.fraudFlag
                                   : log.result}
                           </span>
                         </div>
@@ -476,7 +530,7 @@ export default function OrdersPage() {
             <div className="space-y-8 lg:col-span-5">
               <div className="space-y-5">
                 <h4 className="px-2 text-sm font-black uppercase tracking-widest text-slate-900">
-                  Thông tin khách h?ng
+                  {STR.customerInfo}
                 </h4>
                 <div className="relative overflow-hidden rounded-[2.5rem] bg-slate-900 p-8 text-white shadow-2xl shadow-slate-300">
                   <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent/20 blur-3xl" />
@@ -487,8 +541,8 @@ export default function OrdersPage() {
                       <User className="h-8 w-8 text-accent/70" />
                     </div>
                     <div>
-                      <p className="text-xl font-black tracking-tight">{detail.customer_name || "?"}</p>
-                      <p className="text-sm font-bold text-slate-400">{detail.customer_phone || "?"}</p>
+                      <p className="text-xl font-black tracking-tight">{detail.customer_name || "-"}</p>
+                      <p className="text-sm font-bold text-slate-400">{detail.customer_phone || "-"}</p>
                     </div>
                   </div>
 
@@ -497,8 +551,8 @@ export default function OrdersPage() {
                       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent/20 text-accent/70">
                         <MapPin className="h-3.5 w-3.5" />
                       </div>
-                      <span className="leading-relaxed font-bold opacity-80">
-                        {detail.customer_address || "Ch?a cung c?p ð?a ch?"}
+                      <span className="font-bold leading-relaxed opacity-80">
+                        {detail.customer_address || STR.missingAddress}
                       </span>
                     </div>
                     <div className="flex gap-4">
@@ -507,10 +561,10 @@ export default function OrdersPage() {
                       </div>
                       <div className="flex flex-col">
                         <span className="font-black uppercase tracking-widest text-accent-muted">
-                          Ph??ng th?c
+                          {STR.paymentMethod}
                         </span>
                         <span className="font-bold opacity-80">
-                          {detail.payment_method || "Chuy?n kho?n"}
+                          {detail.payment_method || STR.bankDefault}
                         </span>
                       </div>
                     </div>
@@ -522,16 +576,16 @@ export default function OrdersPage() {
                 <div className="space-y-5">
                   <div className="flex items-center justify-between px-2">
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                      Minh ch?ng thanh toán
+                      {STR.receiptProof}
                     </h4>
                     <span className="text-[10px] font-black uppercase tracking-widest text-accent">
-                      Ð? XÁC MINH AI
+                      {STR.verifiedAi}
                     </span>
                   </div>
                   <div className="group relative aspect-[3/4] overflow-hidden rounded-[2.5rem] border-8 border-white bg-slate-100 shadow-2xl shadow-slate-200 ring-1 ring-slate-100">
                     <img
                       src={detail.bill_image_url}
-                      alt="Bi?n lai thanh toán"
+                      alt={STR.receiptAlt}
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-900/60 opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100">
@@ -542,10 +596,10 @@ export default function OrdersPage() {
                         className="flex items-center gap-3 rounded-2xl bg-white px-6 py-3 text-xs font-black text-slate-900 shadow-xl transition-all hover:scale-105 active:scale-95"
                       >
                         <Eye className="h-5 w-5" />
-                        XEM ?NH G?C
+                        {STR.viewFullImage}
                       </a>
                       <p className="text-[10px] font-black uppercase tracking-widest text-white/60">
-                        Nh?n ð? xem chi ti?t
+                        {STR.clickDetail}
                       </p>
                     </div>
                   </div>
@@ -565,7 +619,7 @@ export default function OrdersPage() {
                     ) : (
                       <CheckCircle2 className="h-6 w-6 transition-transform group-hover:scale-125" />
                     )}
-                    <span className="uppercase tracking-[0.2em]">PH? DUY?T Ð?N H?NG</span>
+                    <span className="uppercase tracking-[0.2em]">{STR.approveOrder}</span>
                   </button>
                   <button
                     type="button"
@@ -574,10 +628,10 @@ export default function OrdersPage() {
                     className="flex w-full items-center justify-center gap-4 rounded-3xl border-2 border-rose-100 bg-white py-5 text-sm font-black text-rose-600 transition-all hover:border-rose-200 hover:bg-rose-50 active:scale-95 disabled:opacity-50"
                   >
                     <XCircle className="h-6 w-6" />
-                    <span className="uppercase tracking-[0.2em]">T? CH?I GIAO D?CH</span>
+                    <span className="uppercase tracking-[0.2em]">{STR.rejectTx}</span>
                   </button>
                   <p className="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                    H?nh ð?ng n?y không th? ho?n tác
+                    {STR.actionIrreversible}
                   </p>
                 </div>
               )}

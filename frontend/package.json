@@ -6,7 +6,7 @@
     "dev": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
-    "start:railway": "next start -H 0.0.0.0",
+    "start:railway": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "next lint",
     "check": "npm run lint && npm run build"
   },
