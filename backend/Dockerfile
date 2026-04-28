@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+# Đảm bảo UTF-8 locale cho tiếng Việt
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -7,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-kor \
     tesseract-ocr-vie \
+    locales \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

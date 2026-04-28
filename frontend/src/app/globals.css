@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
   --background: 210 20% 97%;
@@ -28,7 +28,7 @@
   }
   body {
     @apply bg-surface-page text-ink antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Noto Sans', 'Inter', system-ui, sans-serif;
     font-feature-settings: "cv11", "ss01";
   }
 }

@@ -32,6 +32,8 @@ engine = create_async_engine(
         "ssl": _asyncpg_ssl(),
         # Giây — tránh treo khi mạng chậm (asyncpg)
         "timeout": 30,
+        # Đảm bảo UTF-8 encoding cho tiếng Việt
+        "client_encoding": "UTF8",
     },
 )
 
