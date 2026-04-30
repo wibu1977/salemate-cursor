@@ -11,10 +11,17 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    let backendUrl = (process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+    
+    // Đảm bảo có protocol (http/https) để Next.js không báo lỗi "destination does not start with..."
+    if (backendUrl && !backendUrl.startsWith("http://") && !backendUrl.startsWith("https://") && !backendUrl.startsWith("/")) {
+      backendUrl = `http://${backendUrl}`;
+    }
+
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}/:path*`,
+        destination: `${backendUrl}/:path*`,
       },
     ];
   },
