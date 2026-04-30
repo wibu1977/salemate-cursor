@@ -23,6 +23,9 @@ out/
 .idea/
 .cursor/
 .claude/
+
+# GitNexus (local knowledge graph index)
+.gitnexus/
 *.swp
 *.swo
 

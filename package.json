@@ -1,0 +1,14 @@
+{
+  "name": "salemate-workspace",
+  "private": true,
+  "description": "Root workspace tooling (GitNexus indexes this monorepo from repo root)",
+  "scripts": {
+    "gitnexus:analyze": "gitnexus analyze",
+    "gitnexus:analyze:verbose": "gitnexus analyze --verbose",
+    "gitnexus:status": "gitnexus status",
+    "gitnexus:serve": "gitnexus serve"
+  },
+  "devDependencies": {
+    "gitnexus": "^1.6.3"
+  }
+}

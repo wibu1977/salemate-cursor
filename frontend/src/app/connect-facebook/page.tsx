@@ -19,6 +19,22 @@ import {
 
 type FbPage = { id: string; name: string; access_token: string };
 
+/**
+ * Facebook SDK Login: production needs HTTPS; Meta allows HTTP on localhost for dev.
+ */
+function canOpenFacebookLogin(): boolean {
+  if (typeof window === "undefined") return false;
+  const { protocol, hostname } = window.location;
+  const host = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  const isLoopbackLocal =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".localhost");
+  if (isLoopbackLocal) return true;
+  return protocol === "https:";
+}
+
 export default function ConnectFacebookPage() {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
@@ -29,66 +45,80 @@ export default function ConnectFacebookPage() {
   const runFacebookConnect = () => {
     const appId = (process.env.NEXT_PUBLIC_META_APP_ID || "").trim();
     if (!appId) {
-      setError("Thiếu NEXT_PUBLIC_META_APP_ID.");
+      setError("Missing NEXT_PUBLIC_META_APP_ID ? add in Railway/Vercel and rebuild.");
       return;
     }
-    if (typeof window === "undefined" || window.location.protocol !== "https:") {
-      setError("Cần HTTPS để dùng Facebook SDK.");
+    if (!canOpenFacebookLogin()) {
+      setError(
+        "Can dung HTTPS (tru localhost http). Neu dev: mo http://localhost:3000 hoac bat HTTPS."
+      );
       return;
     }
     setError(null);
     setLoading(true);
     setPages([]);
 
-    const deadline = Date.now() + 12_000;
+    const deadline = Date.now() + 20_000;
     const waitFb = async () => {
+      console.log("[Salemate] Waiting for window.FB...");
       while (!window.FB && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 200));
       }
     };
 
     void (async () => {
       await waitFb();
       if (!window.FB) {
-        setError("Facebook SDK chưa tải. Tắt AdBlock và tải lại trang.");
+        console.error("[Salemate] SDK timeout reached.");
+        setError(
+          "Facebook SDK failed to load. Please check your internet connection, disable ad blockers, " +
+          "and ensure this domain is added to your Facebook App settings."
+        );
         setLoading(false);
         return;
       }
 
+      console.log("[Salemate] FB.login triggered.");
       window.FB!.login(
         async (resp: { authResponse?: { accessToken: string }; status?: string }) => {
+          console.log("[Salemate] FB.login response:", resp.status);
           if (!resp.authResponse?.accessToken) {
-            setError("Chưa có quyền Facebook hoặc đã hủy.");
+            setError("Facebook login was cancelled or failed to provide a token.");
             setLoading(false);
             return;
           }
           const token = resp.authResponse.accessToken;
           try {
+            console.log("[Salemate] Fetching accounts from Graph API...");
             const url = new URL("https://graph.facebook.com/v21.0/me/accounts");
             url.searchParams.set("fields", "id,name,access_token");
             url.searchParams.set("access_token", token);
             const r = await fetch(url.toString());
             const data = (await r.json()) as { data?: FbPage[]; error?: { message: string } };
+            
             if (data.error) {
-              setError(data.error.message || "Graph API lỗi");
+              console.error("[Salemate] Graph API error:", data.error);
+              setError(`Facebook Error: ${data.error.message}`);
               setLoading(false);
               return;
             }
+            
             setPages(data.data || []);
             if (!(data.data || []).length) {
               setError(
-                "Không thấy Facebook Page nào. Bạn cần quản trị Page và cấp quyền pages_show_list."
+                "No Facebook Pages found. Make sure you are an admin of at least one Page and have granted permission."
               );
             }
           } catch (e) {
+            console.error("[Salemate] Connection error:", e);
             setError(formatApiError(e));
           } finally {
             setLoading(false);
           }
         },
         {
-          scope:
-            "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement",
+          scope: "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement",
+          return_scopes: true,
         }
       );
     })();
@@ -122,16 +152,16 @@ export default function ConnectFacebookPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.06] bg-white shadow-sm group-hover:bg-accent-soft">
             <ChevronLeft className="h-4 w-4" />
           </div>
-          VỀ DASHBOARD
+          V?? DASHBOARD
         </Link>
 
         <div className="space-y-4">
           <div className="flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-accent text-white shadow-xl shadow-accent/25">
             <Facebook className="h-10 w-10" />
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-ink">Kết nối Fanpage</h1>
+          <h1 className="text-4xl font-black tracking-tight text-ink">K?t n??i Fanpage</h1>
           <p className="max-w-md text-lg font-medium text-ink-muted">
-            Kích hoạt AI Sales Agent trên các kênh bán hàng Facebook của bạn chỉ với vài cú click.
+            K?ch ho?t AI Sales Agent tr?n c?c k?nh b?n h?ng Facebook c?a b?n ch?? v??i v?i c? click.
           </p>
         </div>
 
@@ -143,23 +173,23 @@ export default function ConnectFacebookPage() {
               <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
                 <BenefitItem
                   icon={<ShieldCheck className="h-6 w-6" />}
-                  title="Bảo mật tuyệt đối"
-                  desc="Dữ liệu mã hóa 256-bit chuẩn Meta Business."
+                  title="B?o m?t tuy??t ????i"
+                  desc="D? li??u m? h?a 256-bit chu?n Meta Business."
                 />
                 <BenefitItem
                   icon={<Zap className="h-6 w-6" />}
-                  title="Kích hoạt tức thì"
-                  desc="Tự động đồng bộ tin nhắn & khách hàng."
+                  title="K?ch ho?t t?c th?"
+                  desc="T? ????ng ????ng b?? tin nh?n & kh?ch h?ng."
                 />
                 <BenefitItem
                   icon={<MessageSquare className="h-6 w-6" />}
                   title="AI Sales 24/7"
-                  desc="Tự động trả lời, chốt đơn ngay cả khi bạn ngủ."
+                  desc="T? ????ng tr? l?i, ch??t ???n ngay c? khi b?n ng?."
                 />
                 <BenefitItem
                   icon={<CheckCircle2 className="h-6 w-6" />}
-                  title="Dễ dàng quản lý"
-                  desc="Tất cả Fanpage trên một dashboard duy nhất."
+                  title="D?? d?ng qu?n l?"
+                  desc="T?t c? Fanpage tr?n m??t dashboard duy nh?t."
                 />
               </div>
 
@@ -168,10 +198,13 @@ export default function ConnectFacebookPage() {
                   type="button"
                   onClick={runFacebookConnect}
                   disabled={loading}
-                  className="ai-glow flex w-full items-center justify-center gap-4 rounded-2xl bg-[#1877F2] py-5 font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:-translate-y-1 hover:bg-[#166FE5] active:scale-95 disabled:opacity-50"
+                  className="ai-glow flex w-full items-center justify-center gap-4 rounded-2xl bg-[#1877F2] py-5 font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:-translate-y-1 hover:bg-[#166FE5] active:scale-95 disabled:opacity-70 disabled:cursor-wait"
                 >
                   {loading ? (
-                    <div className="h-6 w-6 animate-spin rounded-full border-3 border-white border-t-transparent" />
+                    <>
+                      <div className="h-6 w-6 animate-spin rounded-full border-4 border-white border-t-transparent" />
+                      ĐANG KẾT NỐI...
+                    </>
                   ) : (
                     <>
                       <Facebook className="h-6 w-6" />
@@ -187,7 +220,7 @@ export default function ConnectFacebookPage() {
           ) : (
             <div className="relative space-y-8">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-black text-ink">Chọn Page để kích hoạt</h3>
+                <h3 className="text-xl font-black text-ink">Ch?n Page ???? k?ch ho?t</h3>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
                   {pages.length} PAGES FOUND
                 </span>
@@ -222,7 +255,7 @@ export default function ConnectFacebookPage() {
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
                       ) : (
                         <>
-                          KÍCH HOẠT
+                          K?CH HO?T
                           <ArrowRight className="h-4 w-4" />
                         </>
                       )}
@@ -236,7 +269,7 @@ export default function ConnectFacebookPage() {
                 onClick={() => setPages([])}
                 className="w-full text-center text-xs font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-accent"
               >
-                Hủy và làm lại
+                H?y v? l?m l?i
               </button>
             </div>
           )}
@@ -248,16 +281,16 @@ export default function ConnectFacebookPage() {
               <Info className="h-5 w-5" />
             </div>
             <div className="space-y-1">
-              <p className="text-xs font-black uppercase tracking-wider text-rose-900">Có lỗi xảy ra</p>
+              <p className="text-xs font-black uppercase tracking-wider text-rose-900">C? l??i x?y ra</p>
               <p className="text-sm font-medium text-rose-600">{error}</p>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-6 opacity-60 sm:grid-cols-3">
-          <FooterLabel icon={<Lock className="h-4 w-4" />} text="Mã hóa dữ liệu" />
+          <FooterLabel icon={<Lock className="h-4 w-4" />} text="M? h?a d? li??u" />
           <FooterLabel icon={<ShieldCheck className="h-4 w-4" />} text="Meta Verified App" />
-          <FooterLabel icon={<ExternalLink className="h-4 w-4" />} text="Tuân thủ GDPR" />
+          <FooterLabel icon={<ExternalLink className="h-4 w-4" />} text="Tu?n th? GDPR" />
         </div>
       </div>
     </div>

@@ -8,21 +8,29 @@ import { getToken, clearAuth } from "@/lib/auth";
  * Production: NEXT_PUBLIC_API_URL=https://api... → gọi trực tiếp HTTPS.
  */
 function getApiBaseURL(): string {
-  const env = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  const env = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
+  // Server-side (SSR/Pre-rendering)
   if (typeof window === "undefined") {
-    return env || "http://127.0.0.1:8000";
+    return env || process.env.BACKEND_INTERNAL_URL || "http://127.0.0.1:8000";
   }
 
+  // Client-side
+  // If env is empty or accidentally set to the frontend's own URL, 
+  // we must use the "/api" proxy so next.config.js can route it to the backend.
+  const isInternal = !env || env === window.location.origin;
+  
+  if (isInternal) {
+    return "/api";
+  }
+
+  // Only use the URL directly if it's a valid external HTTPS endpoint
   if (env.startsWith("https://")) {
     return env;
   }
 
-  if (!env || env.startsWith("http://")) {
-    return "/api";
-  }
-
-  return env;
+  // Fallback to /api for everything else (like http:// local dev)
+  return "/api";
 }
 
 const api = axios.create({

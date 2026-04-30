@@ -16,14 +16,18 @@ export function FacebookSDK() {
     if (document.getElementById("facebook-jssdk")) return;
 
     window.fbAsyncInit = function () {
+      console.log("[Salemate] fbAsyncInit triggered.");
       const fb = window.FB;
       if (fb) {
         fb.init({
           appId: FB_APP_ID,
           cookie: true,
-          xfbml: false,
+          xfbml: true,
           version: "v21.0",
         });
+        console.log("[Salemate] FB.init successful.");
+      } else {
+        console.error("[Salemate] window.FB is missing inside fbAsyncInit!");
       }
     };
 
@@ -32,6 +36,9 @@ export function FacebookSDK() {
     script.src = "https://connect.facebook.net/en_US/sdk.js";
     script.async = true;
     script.defer = true;
+    script.crossOrigin = "anonymous";
+    script.onload = () => console.log("[Salemate] Facebook SDK script loaded.");
+    script.onerror = (e) => console.error("[Salemate] Facebook SDK script failed to load.", e);
     document.head.appendChild(script);
   }, []);
 
