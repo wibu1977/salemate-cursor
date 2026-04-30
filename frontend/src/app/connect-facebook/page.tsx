@@ -61,12 +61,19 @@ export default function ConnectFacebookPage() {
   };
 
   const runFacebookConnect = () => {
+    console.log("[Salemate] runFacebookConnect clicked!");
     const appId = (process.env.NEXT_PUBLIC_META_APP_ID || "").trim();
+    console.log("[Salemate] App ID:", appId);
+    
     if (!appId) {
       setError("Missing NEXT_PUBLIC_META_APP_ID ? add in Railway/Vercel and rebuild.");
       return;
     }
-    if (!canOpenFacebookLogin()) {
+    
+    const canLogin = canOpenFacebookLogin();
+    console.log("[Salemate] canOpenFacebookLogin:", canLogin);
+    
+    if (!canLogin) {
       setError(
         "Can dung HTTPS (tru localhost http). Neu dev: mo http://localhost:3000 hoac bat HTTPS."
       );
@@ -109,42 +116,45 @@ export default function ConnectFacebookPage() {
       }, FB_LOGIN_FALLBACK_MS);
 
       window.FB!.login(
-        async (resp: { authResponse?: { accessToken: string }; status?: string }) => {
-          clearFbLoginFallback();
-          console.log("[Salemate] FB.login response:", resp.status);
-          if (!resp.authResponse?.accessToken) {
-            setError("Đăng nhập Facebook bị hủy hoặc không trả về token. Cho phép popup và thử lại.");
-            setLoading(false);
-            return;
-          }
-          const token = resp.authResponse.accessToken;
-          try {
-            console.log("[Salemate] Fetching accounts from Graph API...");
-            const url = new URL("https://graph.facebook.com/v21.0/me/accounts");
-            url.searchParams.set("fields", "id,name,access_token");
-            url.searchParams.set("access_token", token);
-            const r = await fetch(url.toString());
-            const data = (await r.json()) as { data?: FbPage[]; error?: { message: string } };
-            
-            if (data.error) {
-              console.error("[Salemate] Graph API error:", data.error);
-              setError(`Facebook Error: ${data.error.message}`);
+        (resp: { authResponse?: { accessToken: string }; status?: string }) => {
+          // FB SDK sometimes fails if an async function is passed directly as a callback
+          void (async () => {
+            clearFbLoginFallback();
+            console.log("[Salemate] FB.login response:", resp.status);
+            if (!resp.authResponse?.accessToken) {
+              setError("Đăng nhập Facebook bị hủy hoặc không trả về token. Cho phép popup và thử lại.");
               setLoading(false);
               return;
             }
-            
-            setPages(data.data || []);
-            if (!(data.data || []).length) {
-              setError(
-                "No Facebook Pages found. Make sure you are an admin of at least one Page and have granted permission."
-              );
+            const token = resp.authResponse.accessToken;
+            try {
+              console.log("[Salemate] Fetching accounts from Graph API...");
+              const url = new URL("https://graph.facebook.com/v21.0/me/accounts");
+              url.searchParams.set("fields", "id,name,access_token");
+              url.searchParams.set("access_token", token);
+              const r = await fetch(url.toString());
+              const data = (await r.json()) as { data?: FbPage[]; error?: { message: string } };
+              
+              if (data.error) {
+                console.error("[Salemate] Graph API error:", data.error);
+                setError(`Facebook Error: ${data.error.message}`);
+                setLoading(false);
+                return;
+              }
+              
+              setPages(data.data || []);
+              if (!(data.data || []).length) {
+                setError(
+                  "No Facebook Pages found. Make sure you are an admin of at least one Page and have granted permission."
+                );
+              }
+            } catch (e) {
+              console.error("[Salemate] Connection error:", e);
+              setError(formatApiError(e));
+            } finally {
+              setLoading(false);
             }
-          } catch (e) {
-            console.error("[Salemate] Connection error:", e);
-            setError(formatApiError(e));
-          } finally {
-            setLoading(false);
-          }
+          })();
         },
         {
           scope: "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement",
