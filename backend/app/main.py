@@ -14,6 +14,20 @@ logger = logging.getLogger("salemate")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Khởi tạo database tables nếu chưa có (MVP mode)
+    from app.database import engine, Base
+    import app.models  # Đảm bảo models đã được load
+    
+    logger.info("Initializing database tables...")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables initialized successfully.")
+    except Exception as e:
+        logger.error("Failed to initialize database: %s", e)
+        # Không raise lỗi ở đây để tránh làm chết service nếu lỗi không nghiêm trọng
+        # Tuy nhiên trên Railway nên check logs nếu gặp lỗi 500 sau đó.
+    
     yield
 
 

@@ -90,6 +90,25 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def sanitize_database_url(self) -> "Settings":
+        url = self.DATABASE_URL or ""
+        
+        # 1. Đảm bảo driver là asyncpg cho SQLAlchemy Async
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # 2. Loại bỏ các query params gây lỗi cho asyncpg (như client_encoding)
+        if "?" in url:
+            base_url, query_params = url.split("?", 1)
+            # Giữ lại các params quan trọng nếu cần, hoặc xóa sạch nếu Railway tự thêm rác
+            # asyncpg thường cấu hình qua connect_args, không qua query string.
+            # Ở đây ta xóa sạch query params để đảm bảo an toàn.
+            url = base_url
+            
+        object.__setattr__(self, "DATABASE_URL", url)
+        return self
+
+    @model_validator(mode="after")
     def merge_cors_extra_origins(self) -> "Settings":
         raw = (self.CORS_EXTRA_ORIGINS or "").strip()
         if not raw:

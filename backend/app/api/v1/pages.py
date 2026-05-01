@@ -69,42 +69,58 @@ async def connect_page(
         payload.platform,
         workspace_id,
     )
-    existing = await db.execute(
-        select(ShopPage).where(ShopPage.page_id == payload.page_id)
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Page already connected")
+    
+    try:
+        existing = await db.execute(
+            select(ShopPage).where(ShopPage.page_id == payload.page_id)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Page already connected")
 
-    # 1. Subscribe page to webhook events
-    sub_result = await MetaService.subscribe_page_to_webhooks(
-        payload.page_access_token, payload.page_id
-    )
-    if not sub_result.get("success"):
-        logger.error("Failed to subscribe page %s: %s", payload.page_id, sub_result)
-        raise HTTPException(status_code=502, detail=f"Meta subscription failed: {sub_result}")
+        # 1. Subscribe page to webhook events
+        logger.info("Subscribing page %s to webhooks...", payload.page_id)
+        sub_result = await MetaService.subscribe_page_to_webhooks(
+            payload.page_access_token, payload.page_id
+        )
+        if not sub_result.get("success") and not sub_result.get("id"):
+            # Một số API Meta trả về ID thay vì success: True
+            logger.error("Failed to subscribe page %s: %s", payload.page_id, sub_result)
+            raise HTTPException(status_code=502, detail=f"Meta subscription failed: {sub_result}")
 
-    # 2. Set Get Started button
-    await MetaService.set_get_started_button(payload.page_access_token)
+        # 2. Set Get Started button
+        logger.info("Setting Get Started button for page %s...", payload.page_id)
+        await MetaService.set_get_started_button(payload.page_access_token)
 
-    # 3. Set persistent menu
-    await MetaService.set_persistent_menu(payload.page_access_token, SHOP_PERSISTENT_MENU)
+        # 3. Set persistent menu
+        logger.info("Setting persistent menu for page %s...", payload.page_id)
+        await MetaService.set_persistent_menu(payload.page_access_token, SHOP_PERSISTENT_MENU)
 
-    # 4. Set ice breakers
-    await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
+        # 4. Set ice breakers
+        logger.info("Setting ice breakers for page %s...", payload.page_id)
+        await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
 
-    page = ShopPage(
-        workspace_id=workspace_id,
-        page_id=payload.page_id,
-        page_name=payload.page_name,
-        page_access_token=payload.page_access_token,
-        platform=payload.platform,
-    )
-    db.add(page)
-    await db.flush()
-    await db.refresh(page)
+        page = ShopPage(
+            workspace_id=workspace_id,
+            page_id=payload.page_id,
+            page_name=payload.page_name,
+            page_access_token=payload.page_access_token,
+            platform=payload.platform,
+        )
+        db.add(page)
+        await db.flush()
+        await db.refresh(page)
 
-    logger.info("Connected page %s (%s) to workspace %s", payload.page_name, payload.page_id, workspace_id)
-    return page
+        logger.info("Connected page %s (%s) to workspace %s", payload.page_name, payload.page_id, workspace_id)
+        return page
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error in connect_page: %s", e)
+        raise HTTPException(
+            status_code=500, 
+            detail={"error": "internal", "message": str(e)}
+        )
 
 
 @router.delete("/{page_db_id}")
