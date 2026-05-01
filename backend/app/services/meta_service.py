@@ -13,10 +13,14 @@ _http_client: httpx.AsyncClient | None = None
 
 
 import certifi
+import ssl
 
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
+        # Log SSL paths to debug certificate issues in production
+        logger.info("SSL Default Verify Paths: %s", ssl.get_default_verify_paths())
+        
         # trust_env=False: bỏ qua HTTP(S)_PROXY
         # verify=certifi.where(): sử dụng bộ CA chuẩn để xác minh SSL
         _http_client = httpx.AsyncClient(
