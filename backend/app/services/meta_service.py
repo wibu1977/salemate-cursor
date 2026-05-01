@@ -22,11 +22,12 @@ def _get_client() -> httpx.AsyncClient:
         logger.info("SSL Default Verify Paths: %s", ssl.get_default_verify_paths())
         
         # trust_env=False: bỏ qua HTTP(S)_PROXY
-        # verify=certifi.where(): sử dụng bộ CA chuẩn để xác minh SSL
+        # Sử dụng ssl.create_default_context() thay vì certifi để đọc chứng chỉ từ OS (ca-certificates)
+        ctx = ssl.create_default_context()
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, connect=15.0),
             trust_env=False,
-            verify=certifi.where(),
+            verify=ctx,
             follow_redirects=True,
         )
     return _http_client
