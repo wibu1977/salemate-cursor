@@ -3,6 +3,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
 import uuid
+import logging
+
+logger = logging.getLogger("salemate.auth")
 
 from app.database import get_db
 from app.config import get_settings
@@ -20,7 +23,7 @@ if settings.SUPABASE_URL:
 
 
 def _decode_supabase_payload(token: str) -> dict | None:
-    # 1. Thử giải mã bằng Asymmetric Keys (JWKS) — Chuẩn mới của Supabase
+    # 1. Thử giải mã bằng Asymmetric Keys (JWKS) — Chuẩn mới của Supabase (ES256)
     if jwks_client:
         try:
             signing_key = jwks_client.get_signing_key_from_jwt(token)
@@ -30,22 +33,42 @@ def _decode_supabase_payload(token: str) -> dict | None:
                 algorithms=["RS256", "ES256"],
                 options={"verify_aud": False},
             )
-        except Exception:
+        except Exception as e:
+            # Chỉ log debug nếu cần, vì có thể token này dùng HS256
             pass
 
     # 2. Thử giải mã bằng Symmetric Secret (HS256) — Chuẩn cũ/Legacy
     sup_secret = (settings.SUPABASE_JWT_SECRET or "").strip()
     if sup_secret:
+        # Loại bỏ dấu nháy nếu người dùng lỡ copy cả vào env
+        sup_secret = sup_secret.strip("'").strip('"')
+        
+        # Thử giải mã với chuỗi gốc và chuỗi đã decode base64 (Supabase thường dùng base64)
+        secrets_to_try = [sup_secret]
+        import base64
         try:
-            return jwt.decode(
-                token,
-                sup_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False},
-            )
-        except jwt.PyJWTError:
+            # Thêm padding nếu thiếu để b64decode không lỗi
+            missing_padding = len(sup_secret) % 4
+            if missing_padding:
+                padded_secret = sup_secret + ('=' * (4 - missing_padding))
+                secrets_to_try.append(base64.b64decode(padded_secret))
+            else:
+                secrets_to_try.append(base64.b64decode(sup_secret))
+        except Exception:
             pass
 
+        for secret in secrets_to_try:
+            try:
+                return jwt.decode(
+                    token,
+                    secret,
+                    algorithms=["HS256"],
+                    options={"verify_aud": False},
+                )
+            except jwt.PyJWTError:
+                continue
+    
+    logger.warning("[Auth] Token decoding failed for all methods.")
     return None
 
 

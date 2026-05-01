@@ -35,7 +35,7 @@ async def auth_me(
     token = credentials.credentials
     sup_secret = (_settings.SUPABASE_JWT_SECRET or "").strip()
     if sup_secret:
-        payload = _decode_supabase_payload(token, sup_secret)
+        payload = _decode_supabase_payload(token)
         if payload and payload.get("sub"):
             try:
                 uid = uuid.UUID(str(payload["sub"]))
