@@ -12,14 +12,17 @@ GRAPH_URL = "https://graph.facebook.com/v21.0"
 _http_client: httpx.AsyncClient | None = None
 
 
+import certifi
+
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        # trust_env=False: bỏ qua HTTP(S)_PROXY — trên Railway/proxy lỗi hay dẫn tới
-        # ConnectError / OSError Errno 101 "Network is unreachable" khi gọi graph.facebook.com
+        # trust_env=False: bỏ qua HTTP(S)_PROXY
+        # verify=certifi.where(): sử dụng bộ CA chuẩn để xác minh SSL
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, connect=15.0),
             trust_env=False,
+            verify=certifi.where(),
             follow_redirects=True,
         )
     return _http_client

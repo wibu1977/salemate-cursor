@@ -117,6 +117,17 @@ async def connect_page(
         
     except HTTPException:
         raise
+    except httpx.ConnectError as e:
+        logger.exception("SSL/Connection error in connect_page: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "ssl_connection_error",
+                "message": (
+                    f"Lỗi bảo mật/kết nối (SSL/TLS). Có thể chứng chỉ không hợp lệ: {e}"
+                ),
+            },
+        )
     except httpx.RequestError as e:
         logger.exception("Graph API / network error in connect_page: %s", e)
         raise HTTPException(
@@ -125,10 +136,20 @@ async def connect_page(
                 "error": "meta_unreachable",
                 "message": (
                     "Máy chủ không kết nối được tới Facebook (Graph API). "
-                    "Nếu chạy trên Railway: trong Variables của service Backend, hãy xóa hoặc sửa "
-                    "HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY nếu đang đặt sai. "
-                    "Chi tiết kỹ thuật: "
-                    + str(e)
+                    "Chi tiết kỹ thuật: " + str(e)
+                ),
+            },
+        )
+    except OSError as e:
+        logger.exception("OS network error in connect_page: %s", e)
+        # Catch errors like [Errno 101] Network is unreachable
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "network_unreachable",
+                "message": (
+                    f"Lỗi mạng hệ thống ({e}). Trên Railway, hãy vào Settings -> Networking "
+                    "và bật 'Enable Outbound IPv6', sau đó Deploy lại."
                 ),
             },
         )
