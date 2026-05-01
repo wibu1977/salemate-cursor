@@ -10,21 +10,8 @@ const nextConfig = {
       { protocol: "https", hostname: "platform-lookaside.fbsbx.com" },
     ],
   },
-  async rewrites() {
-    let backendUrl = (process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-    
-    // Đảm bảo có protocol (http/https) để Next.js không báo lỗi "destination does not start with..."
-    if (backendUrl && !backendUrl.startsWith("http://") && !backendUrl.startsWith("https://") && !backendUrl.startsWith("/")) {
-      backendUrl = `http://${backendUrl}`;
-    }
-
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendUrl}/:path*`,
-      },
-    ];
-  },
+  // /api/* do src/app/api/[...path]/route.ts proxy tới backend (đọc BACKEND_INTERNAL_URL lúc request).
+  // Tránh rewrite bake http://127.0.0.1:8000 khi Railway build thiếu env.
 };
 
 module.exports = nextConfig;

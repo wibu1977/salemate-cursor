@@ -2,34 +2,21 @@ import axios, { type InternalAxiosRequestConfig } from "axios";
 import { getToken, clearAuth } from "@/lib/auth";
 
 /**
- * Trên trình duyệt, nếu gọi thẳng http://127.0.0.1:8000 từ trang https://localhost
- * thì bị chặn mixed content (và CORS preflight dễ lỗi). next.config.js đã rewrite
- * /api/* → backend; dùng baseURL "/api" trên client khi API là HTTP local.
- * Production: NEXT_PUBLIC_API_URL=https://api... → gọi trực tiếp HTTPS.
+ * Trình duyệt luôn gọi same-origin `/api` → App Router proxy tới backend (BACKEND_INTERNAL_URL runtime).
+ * Tránh CORS và tránh NEXT_PUBLIC_API_URL trỏ thẳng backend nhưng thiếu origin trong CORS.
+ * SSR: gọi trực tiếp backend qua BACKEND_INTERNAL_URL / NEXT_PUBLIC_API_URL.
  */
 function getApiBaseURL(): string {
-  const env = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+  const serverEnv = (process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "")
+    .replace(/\/$/, "");
 
-  // Server-side (SSR/Pre-rendering)
   if (typeof window === "undefined") {
-    return env || process.env.BACKEND_INTERNAL_URL || "http://127.0.0.1:8000";
+    if (serverEnv.startsWith("http://") || serverEnv.startsWith("https://")) {
+      return serverEnv;
+    }
+    return "http://127.0.0.1:8000";
   }
 
-  // Client-side
-  // If env is empty or accidentally set to the frontend's own URL, 
-  // we must use the "/api" proxy so next.config.js can route it to the backend.
-  const isInternal = !env || env === window.location.origin;
-  
-  if (isInternal) {
-    return "/api";
-  }
-
-  // Only use the URL directly if it's a valid external HTTPS endpoint
-  if (env.startsWith("https://")) {
-    return env;
-  }
-
-  // Fallback to /api for everything else (like http:// local dev)
   return "/api";
 }
 
@@ -109,10 +96,12 @@ export function formatApiError(err: unknown): string {
       return "Không kết nối được API. Hãy chạy backend (uvicorn trên 127.0.0.1:8000) và khởi động lại frontend.";
     }
     return (
-      "Không kết nối được API. Trên hosting (Railway): (1) Service frontend → Variables: " +
-      "NEXT_PUBLIC_API_URL = URL HTTPS của backend (vd. https://xxx.up.railway.app, không / cuối, phải là https:// — http:// sẽ không dùng được từ trang HTTPS). " +
-      "(2) Redeploy frontend sau khi đổi biến (next build mới nhận NEXT_PUBLIC_*). " +
-      "(3) Backend: CORS_ORIGINS gồm URL dashboard. (4) Nếu vẫn lỗi, F12 → Network xem request admin/auth bị chặn hay CORS."
+      "Không kết nối được API. Trên Railway: (1) Service Frontend → Variables: " +
+      "BACKEND_INTERNAL_URL = URL HTTPS của backend (vd. https://xxx.up.railway.app, không / cuối). " +
+      "Biến này đọc khi chạy — thường không cần rebuild. " +
+      "(2) Service Backend → CORS: thêm CORS_EXTRA_ORIGINS = URL dashboard (vd. https://your-frontend.up.railway.app) " +
+      "hoặc mở rộng CORS_ORIGINS trong .env. " +
+      "(3) F12 → Network: request tới /api/admin/... có status gì (502 = backend URL sai hoặc backend tắt)."
     );
   }
 

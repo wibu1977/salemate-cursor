@@ -15,7 +15,7 @@ import {
   Send,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = "/api";
 
 interface CampaignPreview {
   id: string;
@@ -49,7 +49,7 @@ function CampaignWebviewContent() {
       return;
     }
 
-    fetch(`${API_URL}/webview/campaigns/${id}?token=${encodeURIComponent(token)}`)
+    fetch(`${API_BASE}/webview/campaigns/${id}?token=${encodeURIComponent(token)}`)
       .then((r) => {
         if (!r.ok) throw new Error("Không tải được chiến dịch.");
         return r.json();
@@ -69,7 +69,7 @@ function CampaignWebviewContent() {
       if (msg) body.custom_message = msg;
 
       const r = await fetch(
-        `${API_URL}/webview/campaigns/${id}/action?token=${encodeURIComponent(token)}`,
+        `${API_BASE}/webview/campaigns/${id}/action?token=${encodeURIComponent(token)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -86,7 +86,7 @@ function CampaignWebviewContent() {
         setDone("AI đã soạn lại nội dung mới. Vui lòng kiểm tra lại bên dưới.");
         if ((json as { campaign_status?: string }).campaign_status === "pending_approval") {
           const nr = await fetch(
-            `${API_URL}/webview/campaigns/${id}?token=${encodeURIComponent(token)}`
+            `${API_BASE}/webview/campaigns/${id}?token=${encodeURIComponent(token)}`
           );
           if (nr.ok) setData(await nr.json());
         }

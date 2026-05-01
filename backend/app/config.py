@@ -73,6 +73,9 @@ class Settings(BaseSettings):
         "https://pure-curiosity-production-f937.up.railway.app",
     ]
 
+    # Railway / production: thêm nhanh CORS — các URL dashboard phân tách bởi dấu phẩy (vd. https://fe.up.railway.app)
+    CORS_EXTRA_ORIGINS: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @model_validator(mode="after")
@@ -84,6 +87,18 @@ class Settings(BaseSettings):
                 "JWT_SECRET_KEY",
                 "insecure-dev-only-set-JWT_SECRET_KEY-in-env-for-production",
             )
+        return self
+
+    @model_validator(mode="after")
+    def merge_cors_extra_origins(self) -> "Settings":
+        raw = (self.CORS_EXTRA_ORIGINS or "").strip()
+        if not raw:
+            return self
+        extra = [x.strip() for x in raw.split(",") if x.strip()]
+        if not extra:
+            return self
+        merged: list[str] = list(dict.fromkeys([*self.CORS_ORIGINS, *extra]))
+        object.__setattr__(self, "CORS_ORIGINS", merged)
         return self
 
 
