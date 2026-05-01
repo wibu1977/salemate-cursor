@@ -15,7 +15,13 @@ _http_client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        # trust_env=False: bỏ qua HTTP(S)_PROXY — trên Railway/proxy lỗi hay dẫn tới
+        # ConnectError / OSError Errno 101 "Network is unreachable" khi gọi graph.facebook.com
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=15.0),
+            trust_env=False,
+            follow_redirects=True,
+        )
     return _http_client
 
 

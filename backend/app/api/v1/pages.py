@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
 import uuid
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.api.deps import get_current_workspace_id
@@ -115,11 +117,26 @@ async def connect_page(
         
     except HTTPException:
         raise
+    except httpx.RequestError as e:
+        logger.exception("Graph API / network error in connect_page: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "meta_unreachable",
+                "message": (
+                    "Máy chủ không kết nối được tới Facebook (Graph API). "
+                    "Nếu chạy trên Railway: trong Variables của service Backend, hãy xóa hoặc sửa "
+                    "HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY nếu đang đặt sai. "
+                    "Chi tiết kỹ thuật: "
+                    + str(e)
+                ),
+            },
+        )
     except Exception as e:
         logger.exception("Unexpected error in connect_page: %s", e)
         raise HTTPException(
-            status_code=500, 
-            detail={"error": "internal", "message": str(e)}
+            status_code=500,
+            detail={"error": "internal", "message": str(e)},
         )
 
 
