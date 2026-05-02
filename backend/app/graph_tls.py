@@ -22,7 +22,7 @@ logger = logging.getLogger("salemate.graph_tls")
 def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
     """
     SSLContext for verifying server certs (httpx, asyncpg, ...).
-    Prefer SSL_CERT_FILE / REQUESTS_CA_BUNDLE, else truststore, else certifi.
+    Prefer SSL_CERT_FILE / REQUESTS_CA_BUNDLE, else truststore (on non-Linux), else certifi.
     """
     cafile = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
     if cafile:
@@ -43,32 +43,23 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
             cafile,
         )
 
-    try:
-        import truststore
-
-        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    import sys
+    if sys.platform != "linux":
         try:
-            ctx.load_verify_locations(cafile=certifi.where())
-        except ssl.SSLError as merge_exc:
-            logger.warning("TLS: không gộp certifi vào truststore (%s)", merge_exc)
-        logger.info("TLS: truststore + certifi (merged)")
-        vp = ssl.get_default_verify_paths()
-        if log_agent:
-            agent_log(
-                "H1",
-                "graph_tls.py:os_trusted_ssl_context",
-                "ssl_truststore",
-                {
-                    "verify_source": "truststore_plus_certifi",
-                    "openssl_cafile": getattr(vp, "openssl_cafile", None),
-                    "context": "httpx_or_db",
-                    "run": "post-fix-v4",
-                },
-                run_id="post-fix-v4",
-            )
-        return ctx
-    except Exception as e:
-        logger.warning("TLS: truststore failed (%s); using certifi", e)
+            import truststore
+            ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            logger.info("TLS: truststore (OS trust store)")
+            if log_agent:
+                agent_log(
+                    "H1",
+                    "graph_tls.py:os_trusted_ssl_context",
+                    "ssl_truststore",
+                    {"verify_source": "truststore", "run": "post-fix-v4"},
+                    run_id="post-fix-v4",
+                )
+            return ctx
+        except Exception as e:
+            logger.warning("TLS: truststore failed (%s); using certifi", e)
 
     bundle = certifi.where()
     logger.info("TLS: certifi bundle")
@@ -81,8 +72,6 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
             {
                 "verify_source": "certifi_fallback",
                 "openssl_cafile": getattr(vp, "openssl_cafile", None),
-                "cafile": getattr(vp, "cafile", None),
-                "capath": getattr(vp, "capath", None),
                 "certifi_where": bundle,
                 "context": "httpx_or_db",
                 "run": "post-fix-v4",
