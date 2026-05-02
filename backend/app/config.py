@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     DATABASE_URL_SYNC: str = "postgresql://postgres:password@localhost:5432/salemate"
     # Chỉ True nếu TLS Supabase báo CERTIFICATE_VERIFY_FAILED (proxy/antivirus). Không dùng trên production công khai.
     DATABASE_SSL_INSECURE: bool = False
+    # Chỉ True nếu HTTPS tới graph.facebook.com vẫn CERTIFICATE_VERIFY_FAILED sau khi đã truststore+certifi (MITM nội bộ).
+    # Rủi ro bảo mật — chỉ dev / máy bị proxy chèn chứng chỉ tự ký; ưu tiên SSL_CERT_FILE trỏ tới PEM đủ CA.
+    META_GRAPH_SSL_INSECURE: bool = False
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

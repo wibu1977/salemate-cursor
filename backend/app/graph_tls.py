@@ -13,6 +13,7 @@ from pathlib import Path
 
 import certifi
 
+from app.config import get_settings
 from app.debug_agent_log import agent_log
 
 logger = logging.getLogger("salemate.graph_tls")
@@ -33,8 +34,8 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
                     "H1",
                     "graph_tls.py:os_trusted_ssl_context",
                     "verify_choice",
-                    {"source": "SSL_CERT_FILE_or_REQUESTS_CA_BUNDLE", "run": "post-fix-v3"},
-                    run_id="post-fix-v3",
+                    {"source": "SSL_CERT_FILE_or_REQUESTS_CA_BUNDLE", "run": "post-fix-v4"},
+                    run_id="post-fix-v4",
                 )
             return ssl.create_default_context(cafile=str(p.resolve()))
         logger.warning(
@@ -46,7 +47,11 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
         import truststore
 
         ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        logger.info("TLS: truststore (OS certificate store)")
+        try:
+            ctx.load_verify_locations(cafile=certifi.where())
+        except ssl.SSLError as merge_exc:
+            logger.warning("TLS: không gộp certifi vào truststore (%s)", merge_exc)
+        logger.info("TLS: truststore + certifi (merged)")
         vp = ssl.get_default_verify_paths()
         if log_agent:
             agent_log(
@@ -54,12 +59,12 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
                 "graph_tls.py:os_trusted_ssl_context",
                 "ssl_truststore",
                 {
-                    "verify_source": "truststore",
+                    "verify_source": "truststore_plus_certifi",
                     "openssl_cafile": getattr(vp, "openssl_cafile", None),
                     "context": "httpx_or_db",
-                    "run": "post-fix-v3",
+                    "run": "post-fix-v4",
                 },
-                run_id="post-fix-v3",
+                run_id="post-fix-v4",
             )
         return ctx
     except Exception as e:
@@ -80,13 +85,27 @@ def os_trusted_ssl_context(*, log_agent: bool = True) -> ssl.SSLContext:
                 "capath": getattr(vp, "capath", None),
                 "certifi_where": bundle,
                 "context": "httpx_or_db",
-                "run": "post-fix-v3",
+                "run": "post-fix-v4",
             },
-            run_id="post-fix-v3",
+            run_id="post-fix-v4",
         )
     return ssl.create_default_context(cafile=bundle)
 
 
-def graph_https_verify() -> ssl.SSLContext:
-    """httpx ``verify`` argument for Meta / Graph API."""
+def graph_https_verify() -> ssl.SSLContext | bool:
+    """httpx ``verify``: SSLContext, hoặc ``False`` nếu META_GRAPH_SSL_INSECURE (chỉ khi bắt buộc)."""
+    settings = get_settings()
+    if settings.META_GRAPH_SSL_INSECURE:
+        logger.warning(
+            "META_GRAPH_SSL_INSECURE=True — tắt xác minh chứng chỉ HTTPS cho Graph API. "
+            "Rủi ro MITM; ưu tiên SSL_CERT_FILE hoặc sửa proxy/antivirus."
+        )
+        agent_log(
+            "H1",
+            "graph_tls.py:graph_https_verify",
+            "verify_disabled_insecure",
+            {"verify_source": "META_GRAPH_SSL_INSECURE", "run": "post-fix-v4"},
+            run_id="post-fix-v4",
+        )
+        return False
     return os_trusted_ssl_context(log_agent=True)

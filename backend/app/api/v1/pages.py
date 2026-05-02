@@ -20,7 +20,8 @@ logger = logging.getLogger("salemate.pages")
 
 _TLS_DIAG_SUFFIX = (
     " Để chẩn đoán: mở GET /health/outbound-tls trên cùng backend (JSON). "
-    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE trỏ tới file .pem, rồi restart."
+    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE trỏ tới file .pem, rồi restart. "
+    "Tạm thời (rủi ro): META_GRAPH_SSL_INSECURE=true trong backend .env chỉ cho Graph API."
 )
 
 SHOP_PERSISTENT_MENU = [

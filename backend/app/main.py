@@ -45,6 +45,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Startup: outbound TLS context failed: %s", e)
 
+    if settings.META_GRAPH_SSL_INSECURE:
+        logger.warning(
+            "META_GRAPH_SSL_INSECURE=true — HTTPS tới graph.facebook.com không xác minh chứng chỉ."
+        )
+
     yield
 
 
