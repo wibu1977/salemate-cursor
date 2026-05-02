@@ -1,8 +1,12 @@
 import logging
+import ssl
+
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.config import get_settings
+from app.debug_agent_log import agent_log
+from app.graph_tls import graph_https_verify
 
 settings = get_settings()
 logger = logging.getLogger("salemate.meta")
@@ -12,22 +16,15 @@ GRAPH_URL = "https://graph.facebook.com/v21.0"
 _http_client: httpx.AsyncClient | None = None
 
 
-import certifi
-import ssl
-
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        # Log SSL paths to debug certificate issues in production
         logger.info("SSL Default Verify Paths: %s", ssl.get_default_verify_paths())
-        
-        # trust_env=False: bỏ qua HTTP(S)_PROXY
-        # Sử dụng ssl.create_default_context() thay vì certifi để đọc chứng chỉ từ OS (ca-certificates)
-        ctx = ssl.create_default_context()
+        # trust_env=False: ignore HTTP(S)_PROXY for predictable TLS to graph.facebook.com
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, connect=15.0),
             trust_env=False,
-            verify=ctx,
+            verify=graph_https_verify(),
             follow_redirects=True,
         )
     return _http_client
@@ -291,6 +288,14 @@ class MetaService:
     @staticmethod
     async def subscribe_page_to_webhooks(page_access_token: str, page_id: str) -> dict:
         """Subscribe a page to receive messaging webhooks."""
+        # #region agent log
+        agent_log(
+            "H3",
+            "meta_service.py:subscribe_page_to_webhooks",
+            "before_graph_post",
+            {"graph_host": "graph.facebook.com", "page_id": page_id},
+        )
+        # #endregion
         client = _get_client()
         response = await client.post(
             f"{GRAPH_URL}/{page_id}/subscribed_apps",

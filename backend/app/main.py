@@ -27,7 +27,24 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize database: %s", e)
         # Không raise lỗi ở đây để tránh làm chết service nếu lỗi không nghiêm trọng
         # Tuy nhiên trên Railway nên check logs nếu gặp lỗi 500 sau đó.
-    
+
+    try:
+        from app.graph_tls import os_trusted_ssl_context
+
+        _ctx = os_trusted_ssl_context(log_agent=False)
+        logger.info("Startup: outbound TLS context OK (%s)", type(_ctx).__name__)
+        try:
+            import truststore  # noqa: F401
+
+            logger.info("Startup: truststore import OK")
+        except ImportError:
+            logger.warning(
+                "Startup: package truststore missing — pip install truststore "
+                "(see requirements.txt) or Graph TLS may fall back to certifi only."
+            )
+    except Exception as e:
+        logger.error("Startup: outbound TLS context failed: %s", e)
+
     yield
 
 
@@ -90,3 +107,112 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": settings.APP_NAME}
+
+
+@app.get("/health/tls")
+async def health_tls():
+    """
+    Chẩn đoán TLS tới graph.facebook.com (cùng trust store với MetaService).
+    HTTP 200 luôn; xem graph_facebook.tls_ok và http_status (400 = handshake OK, token sai).
+    """
+    import httpx
+
+    from app.graph_tls import graph_https_verify
+
+    try:
+        async with httpx.AsyncClient(
+            verify=graph_https_verify(),
+            trust_env=False,
+            timeout=httpx.Timeout(20.0, connect=15.0),
+        ) as client:
+            r = await client.get(
+                "https://graph.facebook.com/v21.0/me",
+                params={"access_token": "invalid"},
+            )
+        return {
+            "service": settings.APP_NAME,
+            "graph_facebook": {
+                "tls_ok": True,
+                "http_status": r.status_code,
+                "note": "HTTP 400 từ Meta là bình thường (token invalid); quan trọng là không lỗi SSL.",
+            },
+        }
+    except Exception as e:
+        chain = []
+        cur: BaseException | None = e
+        while cur is not None and len(chain) < 8:
+            chain.append(f"{type(cur).__name__}: {str(cur)[:400]}")
+            cur = cur.__cause__
+        logger.exception("health/tls: Graph API probe failed")
+        return {
+            "service": settings.APP_NAME,
+            "graph_facebook": {
+                "tls_ok": False,
+                "error_type": type(e).__name__,
+                "message": str(e)[:800],
+                "exception_chain": chain,
+            },
+        }
+
+
+@app.get("/health/outbound-tls")
+async def health_outbound_tls():
+    """
+    Một lần gọi: TLS/HTTP tới graph.facebook.com + kết nối DB (SELECT 1).
+    Dùng để phân biệt lỗi SSL Meta vs Postgres trên cùng process production.
+    """
+    import httpx
+    from sqlalchemy import text
+
+    from app.database import async_session
+    from app.graph_tls import graph_https_verify
+
+    out: dict = {"service": settings.APP_NAME}
+
+    try:
+        async with httpx.AsyncClient(
+            verify=graph_https_verify(),
+            trust_env=False,
+            timeout=httpx.Timeout(20.0, connect=15.0),
+        ) as client:
+            r = await client.get(
+                "https://graph.facebook.com/v21.0/me",
+                params={"access_token": "invalid"},
+            )
+        out["graph_facebook"] = {
+            "tls_ok": True,
+            "http_status": r.status_code,
+        }
+    except Exception as e:
+        chain: list[str] = []
+        cur: BaseException | None = e
+        while cur is not None and len(chain) < 8:
+            chain.append(f"{type(cur).__name__}: {str(cur)[:400]}")
+            cur = cur.__cause__
+        logger.exception("health/outbound-tls: Graph probe failed")
+        out["graph_facebook"] = {
+            "tls_ok": False,
+            "error_type": type(e).__name__,
+            "message": str(e)[:800],
+            "exception_chain": chain,
+        }
+
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        out["database"] = {"reach_ok": True}
+    except Exception as e:
+        chain_db: list[str] = []
+        cur_db: BaseException | None = e
+        while cur_db is not None and len(chain_db) < 8:
+            chain_db.append(f"{type(cur_db).__name__}: {str(cur_db)[:400]}")
+            cur_db = cur_db.__cause__
+        logger.exception("health/outbound-tls: database probe failed")
+        out["database"] = {
+            "reach_ok": False,
+            "error_type": type(e).__name__,
+            "message": str(e)[:800],
+            "exception_chain": chain_db,
+        }
+
+    return out

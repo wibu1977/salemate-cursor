@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.graph_tls import graph_https_verify
 from app.models.app_user import AppUser
 from app.models.workspace import Workspace, ShopPage
 from app.schemas.auth import TokenResponse, WorkspaceSetup
@@ -114,7 +115,10 @@ class AuthService:
 
     @staticmethod
     async def _verify_facebook_token(access_token: str) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            verify=graph_https_verify(),
+            trust_env=False,
+        ) as client:
             response = await client.get(
                 "https://graph.facebook.com/me",
                 params={"access_token": access_token, "fields": "id,name,email"},

@@ -1,4 +1,6 @@
 import logging
+import os
+import ssl
 import uuid
 
 import httpx
@@ -11,9 +13,15 @@ from app.database import get_db
 from app.api.deps import get_current_workspace_id
 from app.models.workspace import ShopPage
 from app.services.meta_service import MetaService
+from app.debug_agent_log import agent_log
 
 router = APIRouter()
 logger = logging.getLogger("salemate.pages")
+
+_TLS_DIAG_SUFFIX = (
+    " Để chẩn đoán: mở GET /health/outbound-tls trên cùng backend (JSON). "
+    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE trỏ tới file .pem, rồi restart."
+)
 
 SHOP_PERSISTENT_MENU = [
     {"type": "postback", "title": "Xem sản phẩm", "payload": "VIEW_PRODUCTS"},
@@ -71,8 +79,24 @@ async def connect_page(
         payload.platform,
         workspace_id,
     )
-    
+
+    # #region agent log
+    agent_log(
+        "H4",
+        "pages.py:connect_page:entry",
+        "proxy_and_ssl_env_flags",
+        {
+            "HTTPS_PROXY_set": bool(os.environ.get("HTTPS_PROXY")),
+            "HTTP_PROXY_set": bool(os.environ.get("HTTP_PROXY")),
+            "SSL_CERT_FILE_set": bool(os.environ.get("SSL_CERT_FILE")),
+            "REQUESTS_CA_BUNDLE_set": bool(os.environ.get("REQUESTS_CA_BUNDLE")),
+        },
+    )
+    # #endregion
+
+    current_step = "start"
     try:
+        current_step = "db_check_existing"
         existing = await db.execute(
             select(ShopPage).where(ShopPage.page_id == payload.page_id)
         )
@@ -80,6 +104,7 @@ async def connect_page(
             raise HTTPException(status_code=409, detail="Page already connected")
 
         # 1. Subscribe page to webhook events
+        current_step = "subscribe_webhooks"
         logger.info("Subscribing page %s to webhooks...", payload.page_id)
         sub_result = await MetaService.subscribe_page_to_webhooks(
             payload.page_access_token, payload.page_id
@@ -90,14 +115,17 @@ async def connect_page(
             raise HTTPException(status_code=502, detail=f"Meta subscription failed: {sub_result}")
 
         # 2. Set Get Started button
+        current_step = "set_get_started"
         logger.info("Setting Get Started button for page %s...", payload.page_id)
         await MetaService.set_get_started_button(payload.page_access_token)
 
         # 3. Set persistent menu
+        current_step = "set_persistent_menu"
         logger.info("Setting persistent menu for page %s...", payload.page_id)
         await MetaService.set_persistent_menu(payload.page_access_token, SHOP_PERSISTENT_MENU)
 
         # 4. Set ice breakers
+        current_step = "set_ice_breakers"
         logger.info("Setting ice breakers for page %s...", payload.page_id)
         await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
 
@@ -118,6 +146,19 @@ async def connect_page(
     except HTTPException:
         raise
     except httpx.ConnectError as e:
+        # #region agent log
+        chain = []
+        cur: BaseException | None = e
+        while cur is not None:
+            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
+            cur = cur.__cause__
+        agent_log(
+            "H2",
+            "pages.py:connect_page:ConnectError",
+            "tls_connect_failed",
+            {"current_step": current_step, "exception_chain": chain},
+        )
+        # #endregion
         logger.exception("SSL/Connection error in connect_page: %s", e)
         raise HTTPException(
             status_code=502,
@@ -125,7 +166,32 @@ async def connect_page(
                 "error": "ssl_connection_error",
                 "message": (
                     f"Lỗi bảo mật/kết nối (SSL/TLS). Có thể chứng chỉ không hợp lệ: {e}"
+                    + _TLS_DIAG_SUFFIX
                 ),
+                "step": current_step,
+            },
+        )
+    except ssl.SSLError as e:
+        # #region agent log
+        chain = []
+        cur: BaseException | None = e
+        while cur is not None:
+            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
+            cur = cur.__cause__
+        agent_log(
+            "H2",
+            "pages.py:connect_page:SSLError",
+            "tls_ssl_error",
+            {"current_step": current_step, "exception_chain": chain},
+        )
+        # #endregion
+        logger.exception("SSL error in connect_page: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "ssl_error",
+                "message": f"Lỗi chứng chỉ SSL/TLS: {e}" + _TLS_DIAG_SUFFIX,
+                "step": current_step,
             },
         )
     except httpx.RequestError as e:
@@ -154,6 +220,34 @@ async def connect_page(
             },
         )
     except Exception as e:
+        # #region agent log
+        chain = []
+        cur: BaseException | None = e
+        while cur is not None:
+            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
+            cur = cur.__cause__
+        agent_log(
+            "H5",
+            "pages.py:connect_page:Exception",
+            "unexpected_with_chain",
+            {"current_step": current_step, "exception_chain": chain},
+        )
+        # #endregion
+        msg = str(e)
+        if (
+            "CERTIFICATE_VERIFY_FAILED" in msg
+            or "certificate verify failed" in msg.lower()
+            or "self-signed certificate" in msg.lower()
+        ):
+            logger.exception("connect_page: SSL-like error via generic Exception: %s", e)
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": "ssl_error",
+                    "message": f"{msg}{_TLS_DIAG_SUFFIX}",
+                    "step": current_step,
+                },
+            ) from e
         logger.exception("Unexpected error in connect_page: %s", e)
         raise HTTPException(
             status_code=500,

@@ -1,9 +1,9 @@
 import ssl
 
-import certifi
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.config import get_settings
+from app.graph_tls import os_trusted_ssl_context
 
 settings = get_settings()
 
@@ -15,7 +15,8 @@ def _asyncpg_ssl() -> ssl.SSLContext | bool:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
-    return ssl.create_default_context(cafile=certifi.where())
+    # Cùng trust store với Graph API (truststore → certifi) để tránh CERTIFICATE_VERIFY_FAILED trên Windows/MAN.
+    return os_trusted_ssl_context(log_agent=False)
 
 
 # Supabase:
