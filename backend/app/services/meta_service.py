@@ -1,6 +1,7 @@
 import logging
 import ssl
 
+import certifi
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -18,10 +19,13 @@ _http_client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
+        # Production: use certifi CA bundle (comprehensive root certs).
+        # Dev fallback: META_GRAPH_SSL_INSECURE=true disables verification (NOT for production).
+        verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(20.0),
             trust_env=False,
-            verify=True,
+            verify=verify,
             follow_redirects=True,
         )
     return _http_client

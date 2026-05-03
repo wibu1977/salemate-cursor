@@ -3,6 +3,7 @@ import os
 import ssl
 import uuid
 
+import certifi
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,9 +15,12 @@ from app.api.deps import get_current_workspace_id
 from app.models.workspace import ShopPage
 from app.services.meta_service import MetaService
 from app.debug_agent_log import agent_log
+from app.config import get_settings
 
 router = APIRouter()
 logger = logging.getLogger("salemate.pages")
+settings = get_settings()
+settings = get_settings()
 
 _TLS_DIAG_SUFFIX = (
     " Để chẩn đoán: mở GET /health/outbound-tls trên cùng backend (JSON). "
@@ -76,7 +80,8 @@ async def connect_page(
         print(f"request body: {payload.model_dump()}")
         print("======================================")
 
-        async with httpx.AsyncClient(verify=True, trust_env=False) as client:
+        ssl_verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
+        async with httpx.AsyncClient(verify=ssl_verify, trust_env=False) as client:
             graph_res = await client.get(
                 "https://graph.facebook.com/v21.0/me/accounts",
                 params={"access_token": payload.page_access_token}
