@@ -70,34 +70,29 @@ async def connect_page(
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Connect a Facebook/Instagram page to this workspace.
-    Subscribes to webhooks, sets Get Started button + persistent menu.
-    """
-    logger.info(
-        "POST /admin/pages connect page_id=%s platform=%s workspace=%s",
-        payload.page_id,
-        payload.platform,
-        workspace_id,
-    )
-
-    # #region agent log
-    agent_log(
-        "H4",
-        "pages.py:connect_page:entry",
-        "proxy_and_ssl_env_flags",
-        {
-            "HTTPS_PROXY_set": bool(os.environ.get("HTTPS_PROXY")),
-            "HTTP_PROXY_set": bool(os.environ.get("HTTP_PROXY")),
-            "SSL_CERT_FILE_set": bool(os.environ.get("SSL_CERT_FILE")),
-            "REQUESTS_CA_BUNDLE_set": bool(os.environ.get("REQUESTS_CA_BUNDLE")),
-        },
-    )
-    # #endregion
-
-    current_step = "start"
     try:
-        current_step = "db_check_existing"
+        print("========== INCOMING REQUEST ==========")
+        print(f"access_token received from frontend: {payload.page_access_token}")
+        print(f"request body: {payload.model_dump()}")
+        print("======================================")
+
+        async with httpx.AsyncClient(verify=True, trust_env=False) as client:
+            graph_res = await client.get(
+                "https://graph.facebook.com/v21.0/me/accounts",
+                params={"access_token": payload.page_access_token}
+            )
+            print("========== GRAPH API RESPONSE (/me/accounts) ==========")
+            print(f"Status: {graph_res.status_code}")
+            print(f"Body: {graph_res.text}")
+            print("=======================================================")
+
+        logger.info(
+            "POST /admin/pages connect page_id=%s platform=%s workspace=%s",
+            payload.page_id,
+            payload.platform,
+            workspace_id,
+        )
+
         existing = await db.execute(
             select(ShopPage).where(ShopPage.page_id == payload.page_id)
         )
@@ -105,28 +100,23 @@ async def connect_page(
             raise HTTPException(status_code=409, detail="Page already connected")
 
         # 1. Subscribe page to webhook events
-        current_step = "subscribe_webhooks"
         logger.info("Subscribing page %s to webhooks...", payload.page_id)
         sub_result = await MetaService.subscribe_page_to_webhooks(
             payload.page_access_token, payload.page_id
         )
         if not sub_result.get("success") and not sub_result.get("id"):
-            # Một số API Meta trả về ID thay vì success: True
             logger.error("Failed to subscribe page %s: %s", payload.page_id, sub_result)
             raise HTTPException(status_code=502, detail=f"Meta subscription failed: {sub_result}")
 
         # 2. Set Get Started button
-        current_step = "set_get_started"
         logger.info("Setting Get Started button for page %s...", payload.page_id)
         await MetaService.set_get_started_button(payload.page_access_token)
 
         # 3. Set persistent menu
-        current_step = "set_persistent_menu"
         logger.info("Setting persistent menu for page %s...", payload.page_id)
         await MetaService.set_persistent_menu(payload.page_access_token, SHOP_PERSISTENT_MENU)
 
         # 4. Set ice breakers
-        current_step = "set_ice_breakers"
         logger.info("Setting ice breakers for page %s...", payload.page_id)
         await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
 
@@ -143,117 +133,12 @@ async def connect_page(
 
         logger.info("Connected page %s (%s) to workspace %s", payload.page_name, payload.page_id, workspace_id)
         return page
-        
-    except HTTPException:
-        raise
-    except httpx.ConnectError as e:
-        # #region agent log
-        chain = []
-        cur: BaseException | None = e
-        while cur is not None:
-            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
-            cur = cur.__cause__
-        agent_log(
-            "H2",
-            "pages.py:connect_page:ConnectError",
-            "tls_connect_failed",
-            {"current_step": current_step, "exception_chain": chain},
-        )
-        # #endregion
-        logger.exception("SSL/Connection error in connect_page: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": "ssl_connection_error",
-                "message": (
-                    f"Lỗi bảo mật/kết nối (SSL/TLS). Có thể chứng chỉ không hợp lệ: {e}"
-                    + _TLS_DIAG_SUFFIX
-                ),
-                "step": current_step,
-            },
-        )
-    except ssl.SSLError as e:
-        # #region agent log
-        chain = []
-        cur: BaseException | None = e
-        while cur is not None:
-            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
-            cur = cur.__cause__
-        agent_log(
-            "H2",
-            "pages.py:connect_page:SSLError",
-            "tls_ssl_error",
-            {"current_step": current_step, "exception_chain": chain},
-        )
-        # #endregion
-        logger.exception("SSL error in connect_page: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": "ssl_error",
-                "message": f"Lỗi chứng chỉ SSL/TLS: {e}" + _TLS_DIAG_SUFFIX,
-                "step": current_step,
-            },
-        )
-    except httpx.RequestError as e:
-        logger.exception("Graph API / network error in connect_page: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": "meta_unreachable",
-                "message": (
-                    "Máy chủ không kết nối được tới Facebook (Graph API). "
-                    "Chi tiết kỹ thuật: " + str(e)
-                ),
-            },
-        )
-    except OSError as e:
-        logger.exception("OS network error in connect_page: %s", e)
-        # Catch errors like [Errno 101] Network is unreachable
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "error": "network_unreachable",
-                "message": (
-                    f"Lỗi mạng hệ thống ({e}). Trên Railway, hãy vào Settings -> Networking "
-                    "và bật 'Enable Outbound IPv6', sau đó Deploy lại."
-                ),
-            },
-        )
+
     except Exception as e:
-        # #region agent log
-        chain = []
-        cur: BaseException | None = e
-        while cur is not None:
-            chain.append(f"{type(cur).__name__}:{str(cur)[:500]}")
-            cur = cur.__cause__
-        agent_log(
-            "H5",
-            "pages.py:connect_page:Exception",
-            "unexpected_with_chain",
-            {"current_step": current_step, "exception_chain": chain},
-        )
-        # #endregion
-        msg = str(e)
-        if (
-            "CERTIFICATE_VERIFY_FAILED" in msg
-            or "certificate verify failed" in msg.lower()
-            or "self-signed certificate" in msg.lower()
-        ):
-            logger.exception("connect_page: SSL-like error via generic Exception: %s", e)
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "error": "ssl_error",
-                    "message": f"{msg}{_TLS_DIAG_SUFFIX}",
-                    "step": current_step,
-                },
-            ) from e
-        logger.exception("Unexpected error in connect_page: %s", e)
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "internal", "message": str(e)},
-        )
+        import traceback
+        print("ERROR:", str(e))
+        print(traceback.format_exc())
+        raise
 
 
 @router.delete("/{page_db_id}")
