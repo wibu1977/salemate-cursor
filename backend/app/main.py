@@ -131,7 +131,7 @@ async def health_tls():
             timeout=httpx.Timeout(20.0, connect=15.0),
         ) as client:
             r = await client.get(
-                "https://graph.facebook.com/v21.0/me",
+                f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}/me",
                 params={"access_token": "invalid"},
             )
         return {
@@ -181,7 +181,7 @@ async def health_outbound_tls():
             timeout=httpx.Timeout(20.0, connect=15.0),
         ) as client:
             r = await client.get(
-                "https://graph.facebook.com/v21.0/me",
+                f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}/me",
                 params={"access_token": "invalid"},
             )
         out["graph_facebook"] = {

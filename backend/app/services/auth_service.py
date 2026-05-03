@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.graph_tls import graph_https_verify
 from app.models.app_user import AppUser
+from app.services.meta_service import GRAPH_URL
 from app.models.workspace import Workspace, ShopPage
 from app.schemas.auth import TokenResponse, WorkspaceSetup
 
@@ -120,7 +121,7 @@ class AuthService:
             trust_env=False,
         ) as client:
             response = await client.get(
-                "https://graph.facebook.com/me",
+                f"{GRAPH_URL}/me",
                 params={"access_token": access_token, "fields": "id,name,email"},
             )
             if response.status_code != 200:

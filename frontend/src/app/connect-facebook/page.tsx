@@ -129,7 +129,7 @@ export default function ConnectFacebookPage() {
             const token = resp.authResponse.accessToken;
             try {
               console.log("[Salemate] Fetching accounts from Graph API...");
-              const url = new URL("https://graph.facebook.com/v21.0/me/accounts");
+              const url = new URL("https://graph.facebook.com/v19.0/me/accounts");
               url.searchParams.set("fields", "id,name,access_token");
               url.searchParams.set("access_token", token);
               const r = await fetch(url.toString());

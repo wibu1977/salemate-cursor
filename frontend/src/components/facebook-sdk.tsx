@@ -25,7 +25,7 @@ export function FacebookSDK() {
             appId: FB_APP_ID,
             cookie: true,
             xfbml: true,
-            version: "v21.0",
+            version: "v19.0",
           });
           console.log("[Salemate] FB.init successful.");
         } else {

@@ -11,7 +11,7 @@ from app.graph_tls import graph_https_verify
 settings = get_settings()
 logger = logging.getLogger("salemate.meta")
 
-GRAPH_URL = "https://graph.facebook.com/v21.0"
+GRAPH_URL = f"https://graph.facebook.com/{settings.META_GRAPH_API_VERSION}"
 
 _http_client: httpx.AsyncClient | None = None
 
