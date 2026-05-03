@@ -14,6 +14,11 @@ logger = logging.getLogger("salemate")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import ssl
+    ssl._create_default_https_context = ssl.create_default_context
+    logger.info("SSL Verify Paths: %s", ssl.get_default_verify_paths())
+    print("SSL Verify Paths:", ssl.get_default_verify_paths())
+
     # Khởi tạo database tables nếu chưa có (MVP mode)
     from app.database import engine, Base
     import app.models  # Đảm bảo models đã được load
@@ -25,30 +30,6 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables initialized successfully.")
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
-        # Không raise lỗi ở đây để tránh làm chết service nếu lỗi không nghiêm trọng
-        # Tuy nhiên trên Railway nên check logs nếu gặp lỗi 500 sau đó.
-
-    try:
-        from app.graph_tls import os_trusted_ssl_context
-
-        _ctx = os_trusted_ssl_context(log_agent=False)
-        logger.info("Startup: outbound TLS context OK (%s)", type(_ctx).__name__)
-        try:
-            import truststore  # noqa: F401
-
-            logger.info("Startup: truststore import OK")
-        except ImportError:
-            logger.warning(
-                "Startup: package truststore missing — pip install truststore "
-                "(see requirements.txt) or Graph TLS may fall back to certifi only."
-            )
-    except Exception as e:
-        logger.error("Startup: outbound TLS context failed: %s", e)
-
-    if settings.META_GRAPH_SSL_INSECURE:
-        logger.warning(
-            "META_GRAPH_SSL_INSECURE=true — HTTPS tới graph.facebook.com không xác minh chứng chỉ."
-        )
 
     yield
 
@@ -117,16 +98,14 @@ async def health_check():
 @app.get("/health/tls")
 async def health_tls():
     """
-    Chẩn đoán TLS tới graph.facebook.com (cùng trust store với MetaService).
+    Chẩn đoán TLS tới graph.facebook.com.
     HTTP 200 luôn; xem graph_facebook.tls_ok và http_status (400 = handshake OK, token sai).
     """
     import httpx
 
-    from app.graph_tls import graph_https_verify
-
     try:
         async with httpx.AsyncClient(
-            verify=graph_https_verify(),
+            verify=True,
             trust_env=False,
             timeout=httpx.Timeout(20.0, connect=15.0),
         ) as client:
@@ -170,13 +149,12 @@ async def health_outbound_tls():
     from sqlalchemy import text
 
     from app.database import async_session
-    from app.graph_tls import graph_https_verify
 
     out: dict = {"service": settings.APP_NAME}
 
     try:
         async with httpx.AsyncClient(
-            verify=graph_https_verify(),
+            verify=True,
             trust_env=False,
             timeout=httpx.Timeout(20.0, connect=15.0),
         ) as client:

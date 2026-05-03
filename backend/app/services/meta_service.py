@@ -6,7 +6,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from app.config import get_settings
 from app.debug_agent_log import agent_log
-from app.graph_tls import graph_https_verify
 
 settings = get_settings()
 logger = logging.getLogger("salemate.meta")
@@ -19,12 +18,10 @@ _http_client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        logger.info("SSL Default Verify Paths: %s", ssl.get_default_verify_paths())
-        # trust_env=False: ignore HTTP(S)_PROXY for predictable TLS to graph.facebook.com
         _http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=15.0),
+            timeout=httpx.Timeout(20.0),
             trust_env=False,
-            verify=graph_https_verify(),
+            verify=True,
             follow_redirects=True,
         )
     return _http_client
