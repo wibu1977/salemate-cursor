@@ -1,4 +1,5 @@
 import ssl
+import uuid
 
 import certifi
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -30,6 +31,16 @@ def _asyncpg_ssl() -> ssl.SSLContext | bool:
     return ctx
 
 
+def _unique_prepared_statement_name() -> str:
+    """Avoid DuplicatePreparedStatementError behind PgBouncer transaction pooler.
+
+    With prepared_statement_cache_size=0 SQLAlchemy still calls asyncpg prepare();
+    default names (__asyncpg_stmt_N__) can collide when the pooler multiplexes
+    backend sessions. Unique names sidestep duplicate registrations.
+    """
+    return f"sa_{uuid.uuid4().hex}"
+
+
 # Supabase:
 # - Direct host db.<ref>.supabase.co:5432 — requires IPv4 add-on or allowlisting.
 # - Transaction Pooler: aws-0-<region>.pooler.supabase.com:6543 — bypasses IP restrictions,
@@ -42,8 +53,11 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=10,
     connect_args={
+        # asyncpg client-side cache (distinct from SQLAlchemy's below)
         "statement_cache_size": 0,
+        # SQLAlchemy asyncpg dialect: disable LRU of PreparedStatement objects
         "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": _unique_prepared_statement_name,
         "ssl": _asyncpg_ssl(),
         # Seconds — avoid hanging on slow network (asyncpg)
         "timeout": 30,

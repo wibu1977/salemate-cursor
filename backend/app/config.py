@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
 from pydantic import model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -102,14 +104,20 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         
-        # 2. Loại bỏ các query params gây lỗi cho asyncpg (như client_encoding)
+        # 2. Giữ params dialect cần cho PgBouncer; bỏ phần còn lại (vd. client_encoding gây lỗi asyncpg).
         if "?" in url:
-            base_url, query_params = url.split("?", 1)
-            # Giữ lại các params quan trọng nếu cần, hoặc xóa sạch nếu Railway tự thêm rác
-            # asyncpg thường cấu hình qua connect_args, không qua query string.
-            # Ở đây ta xóa sạch query params để đảm bảo an toàn.
-            url = base_url
-            
+            parsed = urlparse(url)
+            kept = {}
+            for k, v in parse_qsl(parsed.query, keep_blank_values=True):
+                lk = k.lower()
+                if lk in (
+                    "prepared_statement_cache_size",
+                    "statement_cache_size",
+                ):
+                    kept[k] = v
+            new_query = urlencode(kept) if kept else ""
+            url = urlunparse(parsed._replace(query=new_query))
+
         object.__setattr__(self, "DATABASE_URL", url)
         return self
 
