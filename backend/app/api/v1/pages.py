@@ -22,15 +22,15 @@ logger = logging.getLogger("salemate.pages")
 settings = get_settings()
 
 _TLS_DIAG_SUFFIX = (
-    " Đ�?chẩn đoán: m�?GET /health/outbound-tls trên cùng backend (JSON). "
-    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE tr�?tới file .pem, rồi restart. "
-    "Tạm thời (rủi ro): META_GRAPH_SSL_INSECURE=true trong backend .env ch�?cho Graph API."
+    " Để chẩn đoán: mở GET /health/outbound-tls trên cùng backend (JSON). "
+    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE trỏ tới file .pem, rồi restart. "
+    "Tạm thời (rủi ro): META_GRAPH_SSL_INSECURE=true trong backend .env chờ cho Graph API."
 )
 
 SHOP_PERSISTENT_MENU = [
     {"type": "postback", "title": "Xem sản phẩm", "payload": "VIEW_PRODUCTS"},
     {"type": "postback", "title": "Đơn hàng của tôi", "payload": "MY_ORDERS"},
-    {"type": "postback", "title": "Liên h�?h�?tr�?, "payload": "CONTACT_SUPPORT"},
+    {"type": "postback", "title": "Liên hệ hỗ trợ", "payload": "CONTACT_SUPPORT"},
 ]
 
 SHOP_ICE_BREAKERS = [

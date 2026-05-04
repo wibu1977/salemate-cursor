@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import logging
 
-from fastapi import APIRouter, Request, Query, HTTPException
+from fastapi import APIRouter, Request, Query, HTTPException, Response
 from app.config import get_settings
 from app.services.message_router import MessageRouter
 
@@ -33,7 +33,10 @@ async def verify_webhook(
 ):
     """Meta webhook verification (Hub Challenge)."""
     if hub_mode == "subscribe" and hub_verify_token == settings.META_VERIFY_TOKEN:
-        return int(hub_challenge)
+        logger.info("Webhook verified successfully")
+        return Response(content=hub_challenge, media_type="text/plain")
+    
+    logger.warning("Webhook verification failed: token mismatch or invalid mode")
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
