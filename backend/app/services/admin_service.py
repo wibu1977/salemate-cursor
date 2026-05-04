@@ -28,7 +28,7 @@ class AdminService:
         async def revenue_since(since: datetime) -> int:
             stmt = select(func.coalesce(func.sum(Order.total_amount), 0)).where(
                 Order.workspace_id == workspace_id,
-                Order.status.in_([OrderStatus.CONFIRMED, OrderStatus.COMPLETED]),
+                Order.status.in_([OrderStatus.CONFIRMED.value, OrderStatus.COMPLETED.value]),
                 Order.confirmed_at >= since,
             )
             result = await db.execute(stmt)
@@ -37,7 +37,7 @@ class AdminService:
         async def count_by_status(status: OrderStatus) -> int:
             stmt = select(func.count(Order.id)).where(
                 Order.workspace_id == workspace_id,
-                Order.status == status,
+                Order.status == status.value,
             )
             result = await db.execute(stmt)
             return result.scalar()
@@ -80,7 +80,7 @@ class AdminService:
             .join(Order, Order.id == OrderItem.order_id)
             .where(
                 Order.workspace_id == workspace_id,
-                Order.status.in_([OrderStatus.CONFIRMED, OrderStatus.COMPLETED]),
+                Order.status.in_([OrderStatus.CONFIRMED.value, OrderStatus.COMPLETED.value]),
                 Order.confirmed_at >= since_utc,
             )
             .group_by(OrderItem.product_name)
@@ -148,13 +148,13 @@ class AdminService:
             return {"error": "Order not found"}
 
         if payload.action == "approve":
-            order.status = OrderStatus.CONFIRMED
+            order.status = OrderStatus.CONFIRMED.value
             order.confirmed_at = datetime.utcnow()
 
             from app.services.stock_service import deduct_stock_and_alert
             await deduct_stock_and_alert(db, order)
         elif payload.action == "reject":
-            order.status = OrderStatus.REJECTED
+            order.status = OrderStatus.REJECTED.value
 
         await db.commit()
 
