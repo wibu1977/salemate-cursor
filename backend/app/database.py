@@ -43,6 +43,7 @@ engine = create_async_engine(
     max_overflow=10,
     connect_args={
         "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
         "ssl": _asyncpg_ssl(),
         # Seconds — avoid hanging on slow network (asyncpg)
         "timeout": 30,
