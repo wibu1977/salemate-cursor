@@ -12,7 +12,7 @@ def _asyncpg_ssl() -> ssl.SSLContext | bool:
     """asyncpg không dùng ?sslmode= trong URL; TLS qua connect_args.ssl.
 
     Priority order:
-    1. DATABASE_SSL_INSECURE=true → skip verification (MITM proxy / self-signed DB)
+    1. DATABASE_SSL_INSECURE=true → skip verification (MITM proxy / self-signed DB / Supabase pooler)
     2. certifi CA bundle → comprehensive public root certs (Supabase, Railway, AWS, etc.)
     3. Fallback → system default context
     """
@@ -28,19 +28,14 @@ def _asyncpg_ssl() -> ssl.SSLContext | bool:
     except (FileNotFoundError, OSError):
         ctx = ssl.create_default_context()
     return ctx
-    # Production: use certifi CA bundle (covers most cloud providers).
-    # Falls back to system default if certifi is unavailable.
-    try:
-        ctx = ssl.create_default_context(cafile=certifi.where())
-    except (FileNotFoundError, OSError):
-        ctx = ssl.create_default_context()
-    return ctx
 
 
 # Supabase:
-# - Host dạng db.<ref>.supabase.co:5432 = kết nối trực tiếp Postgres (thường dùng cho asyncpg).
-# - Pooler: hostname chứa pooler.supabase / supavisor, hoặc port 6543 (transaction) — PgBouncer
-#   hay yêu cầu statement_cache_size=0 (đã bật).
+# - Direct host db.<ref>.supabase.co:5432 — requires IPv4 add-on or allowlisting.
+# - Transaction Pooler: aws-0-<region>.pooler.supabase.com:6543 — bypasses IP restrictions,
+#   requires DATABASE_SSL_INSECURE=true due to self-signed cert chain (or provide sslrootcert).
+# - Session Pooler: same host, port 5432 — use for Alembic/psycopg2 (DATABASE_URL_SYNC).
+# PgBouncer / Supavisor requires statement_cache_size=0 (already set below).
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
@@ -49,7 +44,7 @@ engine = create_async_engine(
     connect_args={
         "statement_cache_size": 0,
         "ssl": _asyncpg_ssl(),
-        # Giây — tránh treo khi mạng chậm (asyncpg)
+        # Seconds — avoid hanging on slow network (asyncpg)
         "timeout": 30,
     },
 )
