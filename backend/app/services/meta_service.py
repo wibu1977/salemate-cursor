@@ -24,7 +24,9 @@ def _get_client() -> httpx.AsyncClient:
         verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(20.0),
-            trust_env=False,
+            # Railway/proxy environments may require HTTP(S)_PROXY / NO_PROXY.
+            # Keep trust_env enabled so outbound Graph API calls can use platform routing.
+            trust_env=True,
             verify=verify,
             follow_redirects=True,
         )
