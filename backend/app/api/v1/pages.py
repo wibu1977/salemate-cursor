@@ -81,7 +81,7 @@ async def connect_page(
         print("======================================")
 
         ssl_verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
-        async with httpx.AsyncClient(verify=ssl_verify, trust_env=False) as client:
+        async with httpx.AsyncClient(verify=ssl_verify) as client:
             graph_res = await client.get(
                 "https://graph.facebook.com/v21.0/me/accounts",
                 params={"access_token": payload.page_access_token}

@@ -1,5 +1,6 @@
 import ssl
 
+import certifi
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.config import get_settings
@@ -8,13 +9,32 @@ settings = get_settings()
 
 
 def _asyncpg_ssl() -> ssl.SSLContext | bool:
-    """asyncpg không dùng ?sslmode= trong URL; TLS qua connect_args.ssl."""
+    """asyncpg không dùng ?sslmode= trong URL; TLS qua connect_args.ssl.
+
+    Priority order:
+    1. DATABASE_SSL_INSECURE=true → skip verification (MITM proxy / self-signed DB)
+    2. certifi CA bundle → comprehensive public root certs (Supabase, Railway, AWS, etc.)
+    3. Fallback → system default context
+    """
     if settings.DATABASE_SSL_INSECURE:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
-    return ssl.create_default_context()
+    # Production: use certifi CA bundle (covers most cloud providers).
+    # Falls back to system default if certifi is unavailable.
+    try:
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except (FileNotFoundError, OSError):
+        ctx = ssl.create_default_context()
+    return ctx
+    # Production: use certifi CA bundle (covers most cloud providers).
+    # Falls back to system default if certifi is unavailable.
+    try:
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except (FileNotFoundError, OSError):
+        ctx = ssl.create_default_context()
+    return ctx
 
 
 # Supabase:
