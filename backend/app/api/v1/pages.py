@@ -97,11 +97,10 @@ async def connect_page(
             workspace_id,
         )
 
-        existing = await db.execute(
+        existing_page = await db.execute(
             select(ShopPage).where(ShopPage.page_id == payload.page_id)
         )
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Page already connected")
+        page = existing_page.scalar_one_or_none()
 
         # 1. Subscribe page to webhook events
         logger.info("Subscribing page %s to webhooks...", payload.page_id)
@@ -124,14 +123,25 @@ async def connect_page(
         logger.info("Setting ice breakers for page %s...", payload.page_id)
         await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
 
-        page = ShopPage(
-            workspace_id=workspace_id,
-            page_id=payload.page_id,
-            page_name=payload.page_name,
-            page_access_token=payload.page_access_token,
-            platform=payload.platform,
-        )
-        db.add(page)
+        if page:
+            # Update existing page
+            page.workspace_id = workspace_id
+            page.page_name = payload.page_name
+            page.page_access_token = payload.page_access_token
+            page.platform = payload.platform
+            page.is_active = True
+            logger.info("Updated and re-activated existing page %s", payload.page_id)
+        else:
+            # Create new page
+            page = ShopPage(
+                workspace_id=workspace_id,
+                page_id=payload.page_id,
+                page_name=payload.page_name,
+                page_access_token=payload.page_access_token,
+                platform=payload.platform,
+                is_active=True
+            )
+            db.add(page)
         await db.flush()
         await db.refresh(page)
 

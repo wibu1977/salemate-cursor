@@ -28,7 +28,7 @@ class Campaign(Base):
     target_segment_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("customer_segments.id"), nullable=True, index=True
     )
-    status: Mapped[CampaignStatus] = mapped_column(SQLEnum(CampaignStatus), default=CampaignStatus.DRAFT)
+    status: Mapped[CampaignStatus] = mapped_column(SQLEnum(CampaignStatus, name="campaign_status"), default=CampaignStatus.DRAFT)
 
     message_template: Mapped[str] = mapped_column(Text)
     ai_generated: Mapped[bool] = mapped_column(default=True)

@@ -27,7 +27,7 @@ class Conversation(Base):
     platform: Mapped[str] = mapped_column(String(20), default="facebook")
 
     state: Mapped[ConversationState] = mapped_column(
-        SQLEnum(ConversationState), default=ConversationState.GREETING
+        SQLEnum(ConversationState, name="conversation_state"), default=ConversationState.GREETING
     )
     order_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
     context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
