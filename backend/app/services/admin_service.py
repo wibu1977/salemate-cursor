@@ -28,7 +28,7 @@ class AdminService:
         async def revenue_since(since: datetime) -> int:
             stmt = select(func.coalesce(func.sum(Order.total_amount), 0)).where(
                 Order.workspace_id == workspace_id,
-                Order.status == OrderStatus.CONFIRMED,
+                Order.status.in_([OrderStatus.CONFIRMED, OrderStatus.COMPLETED]),
                 Order.confirmed_at >= since,
             )
             result = await db.execute(stmt)
@@ -80,7 +80,7 @@ class AdminService:
             .join(Order, Order.id == OrderItem.order_id)
             .where(
                 Order.workspace_id == workspace_id,
-                Order.status == OrderStatus.CONFIRMED,
+                Order.status.in_([OrderStatus.CONFIRMED, OrderStatus.COMPLETED]),
                 Order.confirmed_at >= since_utc,
             )
             .group_by(OrderItem.product_name)

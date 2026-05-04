@@ -32,8 +32,14 @@ class Order(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id"), index=True)
 
     memo_code: Mapped[str] = mapped_column(String(20), unique=True, index=True)
-    status: Mapped[OrderStatus] = mapped_column(SQLEnum(OrderStatus, name="order_status"), default=OrderStatus.PENDING)
-    payment_method: Mapped[PaymentMethod | None] = mapped_column(SQLEnum(PaymentMethod, name="payment_method"), nullable=True)
+    status: Mapped[OrderStatus] = mapped_column(
+        SQLEnum(OrderStatus, name="order_status", values_callable=lambda x: [e.value for e in x]),
+        default=OrderStatus.PENDING
+    )
+    payment_method: Mapped[PaymentMethod | None] = mapped_column(
+        SQLEnum(PaymentMethod, name="payment_method", values_callable=lambda x: [e.value for e in x]),
+        nullable=True
+    )
 
     total_amount: Mapped[int] = mapped_column(Integer, default=0)
     currency: Mapped[str] = mapped_column(String(3), default="KRW")

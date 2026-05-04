@@ -21,7 +21,9 @@ class FraudLog(Base):
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id"), index=True)
 
     check_type: Mapped[str] = mapped_column(String(50))
-    result: Mapped[FraudCheckResult] = mapped_column(SQLEnum(FraudCheckResult))
+    result: Mapped[FraudCheckResult] = mapped_column(
+        SQLEnum(FraudCheckResult, name="fraud_check_result", values_callable=lambda x: [e.value for e in x])
+    )
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
