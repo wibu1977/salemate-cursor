@@ -12,7 +12,7 @@ from app.api.deps import get_current_workspace_id, _decode_supabase_payload, sec
 from app.config import get_settings
 from app.database import get_db
 from app.schemas.admin import DashboardSummary, OrderListItem, OrderDetail, OrderActionRequest
-from app.schemas.auth import AuthMeResponse, FacebookLoginRequest, TokenResponse, WorkspaceSetup
+from app.schemas.auth import AuthMeResponse, FacebookLoginRequest, ReconnectPagesRequest, TokenResponse, WorkspaceSetup
 from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 
@@ -131,8 +131,40 @@ async def setup_workspace(
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Initial workspace setup after first login."""
+    """Initial workspace setup after first login.
+    
+    Nếu payload có user_access_token (short-lived user token từ Facebook Login),
+    backend sẽ tự động exchange lấy long-lived page tokens và lưu vào DB.
+    """
     return await AuthService.setup_workspace(db, workspace_id, payload)
+
+
+@router.post("/auth/reconnect-pages")
+async def reconnect_pages(
+    payload: ReconnectPagesRequest,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Làm mới Page Access Token khi bị hết hạn.
+    
+    Luồng frontend:
+    1. Detect lỗi 'Session has expired' từ Meta API
+    2. Show nút 'Kết nối lại Facebook' trong Dashboard
+    3. User click → FB Login popup → lấy user access token mới
+    4. Frontend gọi POST /admin/auth/reconnect-pages với token đó
+    5. Backend tự exchange lấy long-lived page tokens và cập nhật DB
+    """
+    try:
+        return await AuthService.reconnect_pages(
+            db=db,
+            workspace_id=workspace_id,
+            user_access_token=payload.user_access_token,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except httpx.HTTPError as e:
+        logger.exception("reconnect_pages: Facebook Graph API error")
+        raise HTTPException(status_code=502, detail="Không kết nối được Facebook Graph API.") from e
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)

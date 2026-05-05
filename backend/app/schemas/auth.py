@@ -23,3 +23,10 @@ class WorkspaceSetup(BaseModel):
     page_ids: list[str] = []
     language: str = "vi"
     report_hour: int = 9
+    # Short-lived user token from Facebook Login — backend tự exchange lấy page tokens
+    user_access_token: str | None = None
+
+
+class ReconnectPagesRequest(BaseModel):
+    """Dùng khi page token hết hạn — user đăng nhập lại FB để cấp token mới."""
+    user_access_token: str
