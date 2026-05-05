@@ -59,7 +59,15 @@ class MessageRouter:
             return
 
         if page_id == settings.SALEMATE_PAGE_ID:
-            await MessageRouter._handle_admin_message(sender_id, message, postback)
+            # SALEMATE_PAGE_ID có thể trùng với một shop page (trong môi trường dev/single-tenant).
+            # Ưu tiên: nếu page này có trong shop_pages → xử lý như shop.
+            # Nếu không → mới xử lý như admin page.
+            async with async_session() as db:
+                shop_page = await MessageRouter._resolve_shop_page(db, page_id)
+            if shop_page:
+                await MessageRouter._handle_shop_message(page_id, sender_id, message, postback, platform)
+            else:
+                await MessageRouter._handle_admin_message(sender_id, message, postback)
         else:
             await MessageRouter._handle_shop_message(page_id, sender_id, message, postback, platform)
 
