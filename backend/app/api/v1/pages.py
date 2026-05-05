@@ -1,6 +1,4 @@
 import logging
-import os
-import ssl
 import uuid
 
 import certifi
@@ -14,18 +12,11 @@ from app.database import get_db
 from app.api.deps import get_current_workspace_id
 from app.models.workspace import ShopPage
 from app.services.meta_service import MetaService
-from app.debug_agent_log import agent_log
 from app.config import get_settings
 
 router = APIRouter()
 logger = logging.getLogger("salemate.pages")
 settings = get_settings()
-
-_TLS_DIAG_SUFFIX = (
-    " Để chẩn đoán: mở GET /health/outbound-tls trên cùng backend (JSON). "
-    "CA doanh nghiệp: đặt SSL_CERT_FILE hoặc REQUESTS_CA_BUNDLE trỏ tới file .pem, rồi restart. "
-    "Tạm thời (rủi ro): META_GRAPH_SSL_INSECURE=true trong backend .env chờ cho Graph API."
-)
 
 SHOP_PERSISTENT_MENU = [
     {"type": "postback", "title": "Xem sản phẩm", "payload": "VIEW_PRODUCTS"},
@@ -57,6 +48,41 @@ class PageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+async def _exchange_long_lived_page_token(short_token: str) -> str:
+    """
+    Exchange short-lived page token → long-lived page token (không bao giờ hết hạn).
+
+    Dùng App ID + App Secret qua endpoint oauth/access_token với
+    grant_type=fb_exchange_token — không cần user token riêng.
+
+    Nếu exchange thất bại (ví dụ token đã là long-lived), trả về token gốc
+    để không block luồng kết nối page.
+    """
+    ssl_verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
+    async with httpx.AsyncClient(verify=ssl_verify, timeout=20.0) as client:
+        resp = await client.get(
+            "https://graph.facebook.com/v21.0/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": settings.META_APP_ID,
+                "client_secret": settings.META_APP_SECRET,
+                "fb_exchange_token": short_token,
+            },
+        )
+        data = resp.json()
+
+    if "error" in data:
+        logger.warning(
+            "Long-lived token exchange failed (will use original): %s",
+            data["error"].get("message"),
+        )
+        return short_token
+
+    ll_token = data.get("access_token", short_token)
+    logger.info("Successfully exchanged short-lived → long-lived page token")
+    return ll_token
+
+
 @router.get("", response_model=list[PageResponse])
 async def list_pages(
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
@@ -73,86 +99,81 @@ async def connect_page(
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        print("========== INCOMING REQUEST ==========")
-        print(f"access_token received from frontend: {payload.page_access_token}")
-        print(f"request body: {payload.model_dump()}")
-        print("======================================")
+    """
+    Kết nối Facebook Page với workspace.
 
-        ssl_verify: bool | str = certifi.where() if not settings.META_GRAPH_SSL_INSECURE else False
-        async with httpx.AsyncClient(verify=ssl_verify) as client:
-            graph_res = await client.get(
-                "https://graph.facebook.com/v21.0/me/accounts",
-                params={"access_token": payload.page_access_token}
-            )
-            print("========== GRAPH API RESPONSE (/me/accounts) ==========")
-            print(f"Status: {graph_res.status_code}")
-            print(f"Body: {graph_res.text}")
-            print("=======================================================")
+    Luồng xử lý:
+    1. Exchange short-lived page token → long-lived page token (không bao giờ hết hạn)
+    2. Subscribe page to webhook events
+    3. Cài đặt Get Started / Persistent Menu / Ice Breakers
+    4. Lưu page + long-lived token vào DB
+    """
+    logger.info(
+        "POST /admin/pages connect page_id=%s platform=%s workspace=%s",
+        payload.page_id,
+        payload.platform,
+        workspace_id,
+    )
 
-        logger.info(
-            "POST /admin/pages connect page_id=%s platform=%s workspace=%s",
-            payload.page_id,
-            payload.platform,
-            workspace_id,
+    # ── 1. Exchange lấy long-lived page token ──────────────────────────────────
+    long_lived_token = await _exchange_long_lived_page_token(payload.page_access_token)
+
+    # ── 2. Subscribe page to webhook events ────────────────────────────────────
+    logger.info("Subscribing page %s to webhooks...", payload.page_id)
+    sub_result = await MetaService.subscribe_page_to_webhooks(
+        long_lived_token, payload.page_id
+    )
+    if not sub_result.get("success") and not sub_result.get("id"):
+        logger.error("Failed to subscribe page %s: %s", payload.page_id, sub_result)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Meta webhook subscription failed: {sub_result}",
         )
 
-        existing_page = await db.execute(
-            select(ShopPage).where(ShopPage.page_id == payload.page_id)
+    # ── 3. Cài đặt Messenger UI ────────────────────────────────────────────────
+    logger.info("Setting Get Started button for page %s...", payload.page_id)
+    await MetaService.set_get_started_button(long_lived_token)
+
+    logger.info("Setting persistent menu for page %s...", payload.page_id)
+    await MetaService.set_persistent_menu(long_lived_token, SHOP_PERSISTENT_MENU)
+
+    logger.info("Setting ice breakers for page %s...", payload.page_id)
+    await MetaService.set_ice_breakers(long_lived_token, SHOP_ICE_BREAKERS)
+
+    # ── 4. Lưu vào DB với long-lived token ────────────────────────────────────
+    existing = await db.execute(
+        select(ShopPage).where(ShopPage.page_id == payload.page_id)
+    )
+    page = existing.scalar_one_or_none()
+
+    if page:
+        page.workspace_id = workspace_id
+        page.page_name = payload.page_name
+        page.page_access_token = long_lived_token  # ← long-lived, không hết hạn
+        page.platform = payload.platform
+        page.is_active = True
+        logger.info("Updated existing page %s with new long-lived token", payload.page_id)
+    else:
+        page = ShopPage(
+            workspace_id=workspace_id,
+            page_id=payload.page_id,
+            page_name=payload.page_name,
+            page_access_token=long_lived_token,  # ← long-lived, không hết hạn
+            platform=payload.platform,
+            is_active=True,
         )
-        page = existing_page.scalar_one_or_none()
+        db.add(page)
 
-        # 1. Subscribe page to webhook events
-        logger.info("Subscribing page %s to webhooks...", payload.page_id)
-        sub_result = await MetaService.subscribe_page_to_webhooks(
-            payload.page_access_token, payload.page_id
-        )
-        if not sub_result.get("success") and not sub_result.get("id"):
-            logger.error("Failed to subscribe page %s: %s", payload.page_id, sub_result)
-            raise HTTPException(status_code=502, detail=f"Meta subscription failed: {sub_result}")
+    await db.flush()
+    await db.refresh(page)
 
-        # 2. Set Get Started button
-        logger.info("Setting Get Started button for page %s...", payload.page_id)
-        await MetaService.set_get_started_button(payload.page_access_token)
-
-        # 3. Set persistent menu
-        logger.info("Setting persistent menu for page %s...", payload.page_id)
-        await MetaService.set_persistent_menu(payload.page_access_token, SHOP_PERSISTENT_MENU)
-
-        # 4. Set ice breakers
-        logger.info("Setting ice breakers for page %s...", payload.page_id)
-        await MetaService.set_ice_breakers(payload.page_access_token, SHOP_ICE_BREAKERS)
-
-        if page:
-            # Update existing page
-            page.workspace_id = workspace_id
-            page.page_name = payload.page_name
-            page.page_access_token = payload.page_access_token
-            page.platform = payload.platform
-            page.is_active = True
-            logger.info("Updated and re-activated existing page %s", payload.page_id)
-        else:
-            # Create new page
-            page = ShopPage(
-                workspace_id=workspace_id,
-                page_id=payload.page_id,
-                page_name=payload.page_name,
-                page_access_token=payload.page_access_token,
-                platform=payload.platform,
-                is_active=True
-            )
-            db.add(page)
-        await db.flush()
-        await db.refresh(page)
-
-        logger.info("Connected page %s (%s) to workspace %s", payload.page_name, payload.page_id, workspace_id)
-        return page
-
-    except Exception as e:
-        import traceback
-        print("ERROR:", str(e))
-        print(traceback.format_exc())
-        raise
+    logger.info(
+        "Connected page %s (%s) to workspace %s — long-lived token saved",
+        payload.page_name,
+        payload.page_id,
+        workspace_id,
+    )
+    return page
 
 
 @router.delete("/{page_db_id}")
