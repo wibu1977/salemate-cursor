@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi } from "@/lib/api";
 import { formatCurrency, formatDate, ORDER_STATUS_MAP } from "@/lib/utils";
@@ -611,10 +612,12 @@ export default function OrdersPage() {
                     </span>
                   </div>
                   <div className="group relative aspect-[3/4] overflow-hidden rounded-[2.5rem] border-8 border-white bg-slate-100 shadow-2xl shadow-slate-200 ring-1 ring-slate-100">
-                    <img
+                    <Image
                       src={detail.bill_image_url}
                       alt={STR.receiptAlt}
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      fill
+                      className="object-cover transition-transform duration-700 group-hover:scale-105"
+                      unoptimized
                     />
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-900/60 opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100">
                       <a

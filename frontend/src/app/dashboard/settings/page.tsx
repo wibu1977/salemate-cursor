@@ -20,8 +20,6 @@ import {
   ExternalLink,
   Zap,
   CheckCircle2,
-  Smartphone,
-  Lock,
   HelpCircle,
   LogOut,
   CreditCard,
@@ -30,10 +28,37 @@ import {
   Wallet,
 } from "lucide-react";
 
+interface FBAuthResponse {
+  accessToken: string;
+  userID: string;
+  expiresIn: number;
+  signedRequest: string;
+}
+
+interface FBLoginResponse {
+  authResponse: FBAuthResponse | null;
+  status: string;
+}
+
+interface FBPageData {
+  id: string;
+  name: string;
+  access_token: string;
+}
+
+interface FBAccountsResponse {
+  data?: FBPageData[];
+  error?: { message: string };
+}
+
 declare global {
   interface Window {
     fbAsyncInit: () => void;
-    FB: any;
+    FB: {
+      init: (config: Record<string, unknown>) => void;
+      login: (callback: (res: FBLoginResponse) => void, opts: Record<string, string>) => void;
+      api: (path: string, callback: (res: FBAccountsResponse) => void) => void;
+    };
   }
 }
 
@@ -54,12 +79,7 @@ function SettingsContent() {
   const [language, setLanguage] = useState("vi");
   const [activeTab, setActiveTab] = useState("workspace");
   const [showConnect, setShowConnect] = useState(false);
-  const [pageForm, setPageForm] = useState({
-    page_id: "",
-    page_name: "",
-    page_access_token: "",
-    platform: "facebook",
-  });
+
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -103,7 +123,6 @@ function SettingsContent() {
       toast("Trang đã được kết nối thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["pages"] });
       setShowConnect(false);
-      setPageForm({ page_id: "", page_name: "", page_access_token: "", platform: "facebook" });
     },
     onError: (err) => toast(formatApiError(err), "error"),
   });
@@ -116,10 +135,10 @@ function SettingsContent() {
 
     toast(`Đang mở trang đăng nhập ${platform === "facebook" ? "Facebook" : "Instagram"}...`, "success");
     window.FB.login(
-      function (response: any) {
+      function (response: FBLoginResponse) {
         if (response.authResponse) {
           toast("Đang đồng bộ thông tin trang...", "success");
-          window.FB.api("/me/accounts", function (resp: any) {
+          window.FB.api("/me/accounts", function (resp: FBAccountsResponse) {
             if (resp && !resp.error && resp.data && resp.data.length > 0) {
               // Lấy trang đầu tiên (nếu có nhiều trang, có thể làm UI chọn trang sau)
               const page = resp.data[0];

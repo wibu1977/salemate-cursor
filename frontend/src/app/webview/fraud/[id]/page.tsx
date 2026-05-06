@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -110,11 +111,16 @@ export default function FraudReviewWebview() {
         {/* Bill Image */}
         {data.bill_image_url && (
           <div className="card p-2">
-            <img
-              src={data.bill_image_url}
-              alt="Bill"
-              className="w-full rounded-lg"
-            />
+            <div className="relative w-full">
+              <Image
+                src={data.bill_image_url}
+                alt="Bill"
+                width={600}
+                height={800}
+                className="w-full rounded-lg"
+                unoptimized
+              />
+            </div>
             {data.ocr_data?.ocr_engine && (
               <p className="mt-2 text-center text-xs text-gray-400">
                 OCR engine: {data.ocr_data.ocr_engine}
