@@ -134,14 +134,25 @@ export default function OnboardingPage() {
   };
 
   const connectChannel = (platform: "facebook" | "instagram" = "facebook") => {
+    console.log(`Connecting ${platform}...`);
     const fb = (window as SdkWindow).FB;
-    if (!fb) { alert("SDK chưa sẵn sàng, thử lại sau giây lát!"); return; }
+    if (!fb) { 
+      botMsg("⚠️ SDK Facebook chưa sẵn sàng hoặc bị chặn. Bạn vui lòng thử lại sau giây lát hoặc kiểm tra trình chặn quảng cáo nhé!");
+      return; 
+    }
+    
     fb.login(async (rawRes) => {
+      console.log("FB Login response:", rawRes);
       const res = rawRes as { status: string; authResponse?: { accessToken: string } };
-      if (res.status !== "connected" || !res.authResponse?.accessToken) return;
+      if (res.status !== "connected" || !res.authResponse?.accessToken) {
+        botMsg("⚠️ Bạn chưa hoàn tất kết nối. Hãy thử lại khi bạn sẵn sàng nhé.");
+        return;
+      }
+      
+      await botMsg("Đang lấy danh sách Fanpage của bạn... 🔄", 600);
       fb.api("/me/accounts", async (data) => {
         if (!data?.data?.[0]) {
-          await botMsg("Không tìm thấy Fanpage nào. Hãy đảm bảo bạn đã tạo Fanpage và cấp đủ quyền.");
+          await botMsg("❌ Không tìm thấy Fanpage nào. Hãy đảm bảo bạn đã tạo Fanpage và cấp quyền cho Salemate.");
           return;
         }
         const page = data.data[0];
@@ -156,11 +167,12 @@ export default function OnboardingPage() {
           userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
           await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
           await goPayment();
-        } catch {
-          await botMsg("Có lỗi xảy ra khi kết nối. Bạn có thể thử lại hoặc bỏ qua.");
+        } catch (err) {
+          console.error("Connect page error:", err);
+          await botMsg("❌ Có lỗi xảy ra khi kết nối với hệ thống. Bạn có thể thử lại hoặc bỏ qua bước này.");
         }
       });
-    }, { scope: "pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata" });
+    }, { scope: "pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata,instagram_basic,instagram_manage_messages" });
   };
 
   const skipConnect = async () => {
@@ -283,22 +295,28 @@ export default function OnboardingPage() {
   const startSheetSync = async () => {
     userMsg("Nhập từ Google Sheets 📊");
     await botMsg("Lựa chọn thông minh! Việc này giúp quản lý hàng loạt sản phẩm cực kỳ nhanh chóng.", 800);
-    await botMsg("Hãy dán Spreadsheet ID của bạn vào đây (ví dụ: 1BxiMVs0XRA5...)", 1500);
+    await botMsg("Hãy dán đường link Google Sheet (hoặc Spreadsheet ID) của bạn vào đây:", 1500);
     setStep("product-sheet");
     setTimeout(() => inputRef.current?.focus(), 1600);
   };
 
   const submitSheetId = async () => {
-    const id = input.trim();
+    let id = input.trim();
     if (!id) return;
     
+    // Extract ID if it's a URL
+    const urlMatch = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (urlMatch && urlMatch[1]) {
+      id = urlMatch[1];
+    }
+    
     if (id.length < 20) {
-      await botMsg("⚠️ Spreadsheet ID có vẻ không đúng (thường dài hơn 20 ký tự). Bạn vui lòng kiểm tra lại nhé?");
+      await botMsg("⚠️ Đường link hoặc ID có vẻ không đúng. Bạn vui lòng kiểm tra lại nhé?");
       return;
     }
 
     setInput("");
-    userMsg(`Sheet ID: ${id.slice(0, 8)}...`);
+    userMsg(`Đang đồng bộ từ trang tính...`);
     setTyping(true);
     try {
       const res = await inventoryApi.syncSheets(id);
@@ -411,23 +429,11 @@ export default function OnboardingPage() {
     switch (step) {
       case "bank-account": return inputField("VD: 1234567890", () => submitBank("account"));
       case "bank-name":    
-        return (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
-              {["Vietcombank", "BIDV", "ACB", "Techcombank", "MB Bank"].map(b => (
-                <button key={b} onClick={() => { setInput(b); setTimeout(() => submitBank("bank"), 10); }}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-all hover:border-emerald-200 hover:bg-emerald-50">
-                  {b}
-                </button>
-              ))}
-            </div>
-            {inputField("Hoặc nhập tên ngân hàng khác...", () => submitBank("bank"))}
-          </div>
-        );
+        return inputField("Tên ngân hàng (VD: Vietcombank, BIDV...)", () => submitBank("bank"));
       case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"));
       case "product-name":  return inputField("Hoặc nhập tên sản phẩm...", () => submitProduct("name"));
       case "product-price": return inputField("50000", () => submitProduct("price"), "number");
-      case "product-sheet": return inputField(" Spreadsheet ID (ví dụ: 1BxiMV...)", () => submitSheetId());
+      case "product-sheet": return inputField("Dán link Google Sheet tại đây...", () => submitSheetId());
       case "product-desc":
         return (
           <div className="flex flex-col gap-3">
