@@ -3,11 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
-import {
-  Sparkles, Facebook, ArrowRight, CheckCircle2,
-  CreditCard, X, ChevronRight, ExternalLink,
-} from "lucide-react";
-import { pagesApi, authApi } from "@/lib/api";
+import { pagesApi, authApi, inventoryApi } from "@/lib/api";
+import { RefreshCw, Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
 
 // ── Facebook SDK types (type alias avoids global Window conflict) ───────────
 interface FBPageData { id: string; name: string; access_token: string; }
@@ -28,15 +25,15 @@ type Step =
   | "welcome" | "connect" | "payment"
   | "bank-account" | "bank-name" | "bank-holder"
   | "toss-ack"
-  | "product-name" | "product-price" | "product-desc"
+  | "product-name" | "product-price" | "product-desc" | "product-sheet"
   | "done";
 
-interface Msg { id: string; role: "bot" | "user"; text: string; }
+interface Msg { id: string; role: "bot" | "user"; text: string; component?: React.ReactNode; }
 
 const PROGRESS: Record<Step, number> = {
   welcome: 5, connect: 20, payment: 40,
   "bank-account": 52, "bank-name": 62, "bank-holder": 72, "toss-ack": 72,
-  "product-name": 82, "product-price": 88, "product-desc": 94, done: 100,
+  "product-name": 82, "product-price": 86, "product-desc": 90, "product-sheet": 94, done: 100,
 };
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -66,12 +63,12 @@ export default function OnboardingPage() {
   }, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  const botMsg = useCallback((text: string, delay = 900): Promise<void> =>
+  const botMsg = useCallback((text: string, delay = 900, component?: React.ReactNode): Promise<void> =>
     new Promise((res) => {
       setTyping(true);
       setTimeout(() => {
         setTyping(false);
-        setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "bot", text }]);
+        setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "bot", text, component }]);
         res();
       }, delay);
     }), []);
@@ -83,7 +80,13 @@ export default function OnboardingPage() {
   useEffect(() => {
     (async () => {
       await botMsg("Xin chào! 👋 Tôi là Salemate AI — trợ lý bán hàng thông minh của bạn.", 700);
-      await botMsg("Hãy để tôi giúp bạn thiết lập cửa hàng chỉ trong vài phút 🚀", 1300);
+      await botMsg(
+        "Hãy để tôi giúp bạn thiết lập cửa hàng chỉ trong vài phút 🚀", 
+        1300,
+        <button onClick={startSetup} className="btn-premium flex items-center gap-2 text-base">
+          Bắt đầu thôi! <ArrowRight className="h-5 w-5" />
+        </button>
+      );
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -91,13 +94,46 @@ export default function OnboardingPage() {
   // ── Step handlers ────────────────────────────────────────────────────────
   const startSetup = async () => {
     userMsg("Bắt đầu thôi! 🚀");
-    await botMsg("Đầu tiên, hãy kết nối Fanpage Facebook của bạn 📱");
-    await botMsg("Salemate cần quyền Fanpage để tự động trả lời tin nhắn và chốt đơn 24/7.", 1500);
-    await botMsg("💡 Lưu ý: Chỉ hỗ trợ Facebook Page (Fanpage), không phải tài khoản cá nhân.", 2100);
+    await botMsg("Đầu tiên, hãy kết nối kênh bán hàng Facebook hoặc Instagram của bạn 📱");
+    await botMsg(
+      "Salemate sẽ tự động đồng bộ tin nhắn và chốt đơn 24/7 trên các kênh này.", 
+      1500,
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-[10px] font-medium text-amber-700">
+            <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+            <span>
+              Bạn chưa có Fanpage?{" "}
+              <a href="https://www.facebook.com/pages/create" target="_blank" rel="noopener noreferrer"
+                className="font-black underline hover:text-amber-900">
+                Tạo miễn phí ngay →
+              </a>
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => connectChannel("facebook")}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-[#1877F2] px-3 py-3 text-xs font-black text-white shadow-lg shadow-[#1877F2]/30 transition-all hover:-translate-y-0.5 hover:bg-[#1565D8]">
+              <Facebook className="h-4 w-4" />
+              Facebook
+            </button>
+            <button onClick={() => connectChannel("instagram")}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-tr from-[#FF3040] via-[#D300C5] to-[#7638FA] px-3 py-3 text-xs font-black text-white shadow-lg shadow-purple-500/30 transition-all hover:-translate-y-0.5 opacity-90 hover:opacity-100">
+              <Instagram className="h-4 w-4" />
+              Instagram
+            </button>
+          </div>
+          <button onClick={skipConnect}
+            className="flex items-center justify-center gap-2 text-[10px] font-bold text-slate-400 transition-colors hover:text-slate-600">
+            <ChevronRight className="h-3 w-3" />
+            Bỏ qua, thiết lập sau
+          </button>
+        </div>
+      </div>
+    );
     setStep("connect");
   };
 
-  const connectFacebook = () => {
+  const connectChannel = (platform: "facebook" | "instagram" = "facebook") => {
     const fb = (window as SdkWindow).FB;
     if (!fb) { alert("SDK chưa sẵn sàng, thử lại sau giây lát!"); return; }
     fb.login(async (rawRes) => {
@@ -110,9 +146,14 @@ export default function OnboardingPage() {
         }
         const page = data.data[0];
         try {
-          await pagesApi.connectPage({ page_id: page.id, page_name: page.name, access_token: page.access_token });
+          await pagesApi.connectPage({ 
+            platform, 
+            page_id: page.id, 
+            page_name: page.name, 
+            page_access_token: page.access_token 
+          });
           setConnectedPage(page.name);
-          userMsg(`Kết nối: ${page.name}`);
+          userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
           await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
           await goPayment();
         } catch {
@@ -130,7 +171,28 @@ export default function OnboardingPage() {
 
   const goPayment = async () => {
     setStep("payment");
-    await botMsg("Tiếp theo, khách hàng sẽ thanh toán cho bạn qua đâu? 💳");
+    await botMsg(
+      "Tiếp theo, khách hàng sẽ thanh toán cho bạn qua đâu? 💳",
+      900,
+      <div className="flex flex-col gap-2">
+        <button onClick={() => choosePayment("ocr")}
+          className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 text-left transition-all hover:border-emerald-200 hover:bg-emerald-50">
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+          <div>
+            <div className="text-sm font-black text-emerald-900">Chuyển khoản ngân hàng (OCR)</div>
+            <div className="text-[10px] font-medium text-emerald-600">AI tự xác nhận ảnh • Miễn phí</div>
+          </div>
+        </button>
+        <button onClick={() => choosePayment("toss")}
+          className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-left transition-all hover:border-blue-200 hover:bg-blue-50">
+          <CreditCard className="h-5 w-5 shrink-0 text-blue-500" />
+          <div>
+            <div className="text-sm font-black text-blue-900">Toss / Naver / Kakao Pay</div>
+            <div className="text-[10px] font-medium text-blue-600">Thanh toán hiện đại tại Hàn Quốc</div>
+          </div>
+        </button>
+      </div>
+    );
   };
 
   const choosePayment = async (method: "ocr" | "toss") => {
@@ -176,9 +238,54 @@ export default function OnboardingPage() {
 
   const goProduct = async () => {
     setStep("product-name");
-    await botMsg("Gần xong rồi! Hãy thêm sản phẩm đầu tiên 🛍️", 600);
-    await botMsg("Tên sản phẩm là gì?", 1200);
+    await botMsg("Gần xong rồi! Hãy thêm sản phẩm để AI bắt đầu bán hàng nhé 🛍️", 600);
+    await botMsg(
+      "Bạn muốn nhập tay từng cái hay đồng bộ từ Google Sheets?", 
+      1200,
+      <div className="flex flex-col gap-2">
+        <button onClick={startSheetSync}
+          className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 text-left transition-all hover:border-emerald-200 hover:bg-emerald-50">
+          <TableIcon className="h-5 w-5 shrink-0 text-emerald-500" />
+          <div>
+            <div className="text-sm font-black text-emerald-900">Đồng bộ từ Google Sheets</div>
+            <div className="text-[10px] font-medium text-emerald-600">Tự động nhập hàng loạt từ trang tính</div>
+          </div>
+        </button>
+        <div className="flex items-center gap-2 py-1 px-2">
+          <div className="h-px flex-1 bg-slate-100" />
+          <span className="text-[8px] font-black uppercase tracking-widest text-slate-300">Hoặc nhập tay bên dưới</span>
+          <div className="h-px flex-1 bg-slate-100" />
+        </div>
+      </div>
+    );
     setTimeout(() => inputRef.current?.focus(), 1400);
+  };
+
+  const startSheetSync = async () => {
+    userMsg("Nhập từ Google Sheets 📊");
+    await botMsg("Tuyệt vời! Phương pháp này giúp bạn quản lý hàng ngàn sản phẩm dễ dàng.", 800);
+    await botMsg("Hãy dán ID của Google Spreadsheet vào đây nhé (ví dụ: 1BxiMVs0XRA5...)", 1500);
+    setStep("product-sheet");
+    setTimeout(() => inputRef.current?.focus(), 1600);
+  };
+
+  const submitSheetId = async () => {
+    const id = input.trim();
+    if (!id) return;
+    setInput("");
+    userMsg(`Sheet ID: ${id.slice(0, 8)}...`);
+    setTyping(true);
+    try {
+      const res = await inventoryApi.syncSheets(id);
+      const d = res.data;
+      await botMsg(`✅ Đồng bộ hoàn tất! Đã thêm ${d.created} sản phẩm và cập nhật ${d.updated} sản phẩm.`, 1000);
+      setTimeout(() => finishOnboarding(), 1200);
+    } catch {
+      await botMsg("❌ Có lỗi khi kết nối Google Sheets. Hãy kiểm tra ID và quyền chia sẻ của trang tính.", 1000);
+      setStep("product-name"); // Quay lại bước chọn
+    } finally {
+      setTyping(false);
+    }
   };
 
   const submitProduct = async (field: "name" | "price" | "desc", skipDesc?: boolean) => {
@@ -209,7 +316,20 @@ export default function OnboardingPage() {
     setStep("done");
     await botMsg("🎉 Cửa hàng của bạn đã sẵn sàng!", 600);
     await botMsg("Salemate AI đang lắng nghe mọi tin nhắn và sẵn sàng chốt đơn 24/7 cho bạn.", 1300);
-    await botMsg("Chào mừng đến với Salemate! Hãy vào Dashboard để xem tổng quan 🚀", 2000);
+    await botMsg(
+      "Chào mừng đến với Salemate! Hãy vào Dashboard để xem tổng quan 🚀", 
+      2000,
+      <div className="flex flex-col items-center gap-3">
+        <button onClick={() => router.push("/dashboard")}
+          className="btn-premium flex items-center gap-2 text-base">
+          Vào Dashboard <ArrowRight className="h-5 w-5" />
+        </button>
+        <button onClick={() => goProduct()}
+          className="text-sm font-bold text-slate-400 transition-colors hover:text-accent">
+          + Thêm sản phẩm khác
+        </button>
+      </div>
+    );
     if (typeof window !== "undefined") localStorage.setItem("salemate_onboarding_done", "1");
   };
 
@@ -234,65 +354,12 @@ export default function OnboardingPage() {
   const renderActions = () => {
     if (typing) return null;
     switch (step) {
-      case "welcome":
-        return (
-          <div className="flex justify-center">
-            <button onClick={startSetup} className="btn-premium flex items-center gap-2 text-base">
-              Bắt đầu thôi! <ArrowRight className="h-5 w-5" />
-            </button>
-          </div>
-        );
-      case "connect":
-        return (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-xs font-medium text-amber-700">
-              <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <span>
-                Bạn chưa có Fanpage?{" "}
-                <a href="https://www.facebook.com/pages/create" target="_blank" rel="noopener noreferrer"
-                  className="font-black underline hover:text-amber-900">
-                  Tạo miễn phí ngay →
-                </a>
-              </span>
-            </div>
-            <button onClick={connectFacebook}
-              className="flex items-center gap-3 rounded-2xl bg-[#1877F2] px-6 py-4 font-black text-white shadow-lg shadow-[#1877F2]/30 transition-all hover:-translate-y-0.5 hover:bg-[#1565D8]">
-              <Facebook className="h-5 w-5" />
-              Kết nối Facebook Fanpage
-            </button>
-            <button onClick={skipConnect}
-              className="flex items-center justify-center gap-2 text-sm font-bold text-slate-400 transition-colors hover:text-slate-600">
-              <ChevronRight className="h-4 w-4" />
-              Bỏ qua, thiết lập sau
-            </button>
-          </div>
-        );
-      case "payment":
-        return (
-          <div className="flex flex-col gap-3">
-            <button onClick={() => choosePayment("ocr")}
-              className="flex items-center gap-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50 px-5 py-4 text-left font-black text-emerald-800 transition-all hover:border-emerald-400 hover:bg-emerald-100">
-              <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" />
-              <div>
-                <div>Chuyển khoản ngân hàng (OCR)</div>
-                <div className="mt-0.5 text-xs font-medium text-emerald-600">AI tự xác nhận ảnh chuyển khoản • Mặc định & miễn phí</div>
-              </div>
-            </button>
-            <button onClick={() => choosePayment("toss")}
-              className="flex items-center gap-4 rounded-2xl border-2 border-blue-200 bg-blue-50 px-5 py-4 text-left font-black text-blue-800 transition-all hover:border-blue-400 hover:bg-blue-100">
-              <CreditCard className="h-6 w-6 shrink-0 text-blue-500" />
-              <div>
-                <div>Toss Pay / Naver Pay / Kakao Pay</div>
-                <div className="mt-0.5 text-xs font-medium text-blue-600">Thanh toán đa kênh phổ biến tại Hàn Quốc</div>
-              </div>
-            </button>
-          </div>
-        );
       case "bank-account": return inputField("VD: 1234567890", () => submitBank("account"));
       case "bank-name":    return inputField("VD: Vietcombank, BIDV, ACB...", () => submitBank("bank"));
       case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"));
-      case "product-name": return inputField("Tên sản phẩm...", () => submitProduct("name"));
+      case "product-name":  return inputField("Hoặc nhập tên sản phẩm...", () => submitProduct("name"));
       case "product-price": return inputField("50000", () => submitProduct("price"), "number");
+      case "product-sheet": return inputField(" Spreadsheet ID (ví dụ: 1BxiMV...)", () => submitSheetId());
       case "product-desc":
         return (
           <div className="flex flex-col gap-3">
@@ -300,19 +367,6 @@ export default function OnboardingPage() {
             <button onClick={() => submitProduct("desc", true)}
               className="text-center text-sm font-bold text-slate-400 transition-colors hover:text-slate-600">
               Bỏ qua →
-            </button>
-          </div>
-        );
-      case "done":
-        return (
-          <div className="flex flex-col items-center gap-3">
-            <button onClick={() => router.push("/dashboard")}
-              className="btn-premium flex items-center gap-2 text-base">
-              Vào Dashboard <ArrowRight className="h-5 w-5" />
-            </button>
-            <button onClick={() => goProduct()}
-              className="text-sm font-bold text-slate-400 transition-colors hover:text-accent">
-              + Thêm sản phẩm khác
             </button>
           </div>
         );
@@ -373,6 +427,7 @@ export default function OnboardingPage() {
                 style={{ whiteSpace: "pre-line" }}
               >
                 {m.text}
+                {m.component && <div className="mt-4">{m.component}</div>}
               </div>
             </div>
           ))}
