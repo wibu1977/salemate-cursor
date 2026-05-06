@@ -47,7 +47,7 @@ function PaymentSuccessContent() {
     };
 
     confirm();
-  }, [paymentKey, orderId, amount]);
+  }, [paymentKey, orderId, amount, memoCode]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-50 to-white p-4">

@@ -28,7 +28,6 @@ export function GuidedTour() {
         showProgress: true,
         animate: true,
         doneBtnText: "Hoàn thành",
-        closeBtnText: "Đóng",
         nextBtnText: "Tiếp theo",
         prevBtnText: "Quay lại",
         popoverClass: "salemate-driver-theme",
