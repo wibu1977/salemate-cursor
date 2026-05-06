@@ -26,6 +26,7 @@ import {
   ScanSearch,
   BookOpen,
   Wallet,
+  AlertCircle,
 } from "lucide-react";
 
 interface FBAuthResponse {
@@ -514,11 +515,34 @@ function SettingsContent() {
             </button>
           </div>
 
+          {/* Fanpage Notice */}
+          <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="flex-1">
+                <p className="text-xs font-bold text-amber-800">Chỉ hỗ trợ Facebook Page (Fanpage)</p>
+                <p className="mt-1 text-[11px] font-medium leading-relaxed text-amber-700">
+                  Salemate kết nối với <strong>Fanpage doanh nghiệp</strong>, không phải tài khoản cá nhân. Nếu bạn đang bán qua profile cá nhân, hãy tạo một Fanpage — hoàn toàn miễn phí và giúp bạn tiếp cận nhiều khách hàng hơn qua Facebook Ads.
+                </p>
+                <a
+                  href="https://www.facebook.com/pages/create"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-black text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Tạo Fanpage miễn phí ngay →
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Security note */}
           <div className="rounded-[1.5rem] bg-slate-50 p-5">
             <div className="flex items-start gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
               <div>
-                <p className="text-xs font-bold text-slate-700">Kết nối an toàn & bảo mật</p>
+                <p className="text-xs font-bold text-slate-700">Kết nối an toàn &amp; bảo mật</p>
                 <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500">
                   Chúng tôi không bao giờ lưu trữ mật khẩu của bạn. Mọi quyền truy cập đều tuân thủ chính sách bảo vệ dữ liệu nghiêm ngặt của Meta.
                 </p>
