@@ -2,6 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import Script from "next/script";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi, formatApiError, pagesApi } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
@@ -28,6 +29,13 @@ import {
   BookOpen,
   Wallet,
 } from "lucide-react";
+
+declare global {
+  interface Window {
+    fbAsyncInit: () => void;
+    FB: any;
+  }
+}
 
 interface PageData {
   id: string;
@@ -61,6 +69,17 @@ function SettingsContent() {
     if (action === "connect-facebook") setShowConnect(true);
   }, [searchParams]);
 
+  useEffect(() => {
+    window.fbAsyncInit = function () {
+      window.FB.init({
+        appId: process.env.NEXT_PUBLIC_META_APP_ID,
+        cookie: true,
+        xfbml: true,
+        version: "v21.0",
+      });
+    };
+  }, []);
+
   const { data: pages } = useQuery({
     queryKey: ["pages"],
     queryFn: () => pagesApi.listPages().then((r) => r.data),
@@ -79,7 +98,7 @@ function SettingsContent() {
   });
 
   const connectMutation = useMutation({
-    mutationFn: () => pagesApi.connectPage(pageForm),
+    mutationFn: (data: Record<string, unknown>) => pagesApi.connectPage(data),
     onSuccess: () => {
       toast("Trang đã được kết nối thành công", "success");
       queryClient.invalidateQueries({ queryKey: ["pages"] });
@@ -88,6 +107,39 @@ function SettingsContent() {
     },
     onError: (err) => toast(formatApiError(err), "error"),
   });
+
+  const handleFacebookLogin = (platform: "facebook" | "instagram" = "facebook") => {
+    if (!window.FB) {
+      toast("Facebook SDK chưa được tải, vui lòng tải lại trang.", "error");
+      return;
+    }
+
+    toast(`Đang mở trang đăng nhập ${platform === "facebook" ? "Facebook" : "Instagram"}...`, "success");
+    window.FB.login(
+      function (response: any) {
+        if (response.authResponse) {
+          toast("Đang đồng bộ thông tin trang...", "success");
+          window.FB.api("/me/accounts", function (resp: any) {
+            if (resp && !resp.error && resp.data && resp.data.length > 0) {
+              // Lấy trang đầu tiên (nếu có nhiều trang, có thể làm UI chọn trang sau)
+              const page = resp.data[0];
+              connectMutation.mutate({
+                platform: platform,
+                page_id: page.id,
+                page_name: page.name,
+                page_access_token: page.access_token,
+              });
+            } else {
+              toast("Không tìm thấy Fanpage nào hoặc thiếu quyền truy cập.", "error");
+            }
+          });
+        } else {
+          toast("Bạn chưa cấp quyền truy cập.", "error");
+        }
+      },
+      { scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging" }
+    );
+  };
 
   const disconnectMutation = useMutation({
     mutationFn: (id: string) => pagesApi.disconnectPage(id),
@@ -100,6 +152,11 @@ function SettingsContent() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-12 pb-20">
+      <Script
+        strategy="lazyOnload"
+        crossOrigin="anonymous"
+        src="https://connect.facebook.net/en_US/sdk.js"
+      />
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-5">
           <div className="flex h-16 w-16 items-center justify-center rounded-[2rem] bg-slate-900 text-white shadow-2xl shadow-slate-200">
@@ -390,108 +447,65 @@ function SettingsContent() {
         </div>
       </div>
 
-      <Modal open={showConnect} onClose={() => setShowConnect(false)} title="Kết nối nền tảng mới" size="lg">
-        <div className="space-y-10">
-          <div className="flex items-start gap-6 rounded-[2rem] bg-accent p-8 text-white shadow-2xl shadow-accent/15">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md">
-              <Lock className="h-7 w-7" />
-            </div>
-            <div className="space-y-2">
-              <h4 className="text-lg font-black uppercase tracking-wider">Cấu hình API bảo mật</h4>
-              <p className="text-xs font-bold leading-relaxed opacity-80">
-                Yêu cầu access token có quyền <strong>pages_messaging</strong> và{" "}
-                <strong>pages_read_engagement</strong>. Mọi dữ liệu được mã hóa chuẩn quân đội trước khi lưu
-                trữ.
-              </p>
-            </div>
+      <Modal open={showConnect} onClose={() => setShowConnect(false)} title="Thêm kênh bán hàng mới" size="md">
+        <div className="space-y-8">
+          <div className="text-center space-y-2 pt-2">
+            <h4 className="text-lg font-black text-slate-900">Chọn nền tảng kết nối</h4>
+            <p className="text-sm font-medium text-slate-500">
+              Salemate sử dụng chuẩn xác thực OAuth an toàn để kết nối với các kênh bán hàng của bạn.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
-            <div className="space-y-4">
-              <label className="px-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                Lựa chọn nền tảng
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { id: "facebook", label: "FACEBOOK", icon: <Facebook className="h-6 w-6" />, color: "bg-accent" },
-                  { id: "instagram", label: "INSTAGRAM", icon: <Instagram className="h-6 w-6" />, color: "bg-rose-500" },
-                ].map((plt) => (
-                  <button
-                    key={plt.id}
-                    type="button"
-                    onClick={() => setPageForm({ ...pageForm, platform: plt.id })}
-                    className={`relative flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[1.5rem] border-4 p-6 transition-all duration-300 ${
-                      pageForm.platform === plt.id
-                        ? "scale-105 border-accent bg-white shadow-2xl shadow-accent/15"
-                        : "border-slate-50 bg-slate-50 text-slate-400 opacity-60 grayscale hover:opacity-100 hover:grayscale-0"
-                    }`}
-                  >
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-white ${plt.color}`}>
-                      {plt.icon}
-                    </div>
-                    <span className="text-[10px] font-black tracking-widest">{plt.label}</span>
-                    {pageForm.platform === plt.id && (
-                      <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white">
-                        <CheckCircle2 className="h-3 w-3" />
-                      </div>
-                    )}
-                  </button>
-                ))}
+          <div className="grid grid-cols-1 gap-4">
+            {/* Facebook Button */}
+            <button
+              type="button"
+              onClick={() => handleFacebookLogin("facebook")}
+              disabled={connectMutation.isPending}
+              className="group relative flex items-center gap-4 overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-4 shadow-lg shadow-slate-200/50 transition-all hover:-translate-y-1 hover:border-[#1877F2]/30 hover:shadow-xl hover:shadow-[#1877F2]/10 disabled:opacity-50"
+            >
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] bg-[#1877F2] text-white">
+                <Facebook className="h-8 w-8" />
+              </div>
+              <div className="flex-1 text-left">
+                <h5 className="font-black text-slate-900 transition-colors group-hover:text-[#1877F2]">Facebook Messenger</h5>
+                <p className="mt-0.5 text-xs font-bold text-slate-400">Kết nối Fanpage để trả lời tin nhắn</p>
+              </div>
+              <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-colors group-hover:bg-[#1877F2] group-hover:text-white">
+                <ExternalLink className="h-4 w-4" />
+              </div>
+            </button>
+
+            {/* Instagram Button */}
+            <button
+              type="button"
+              onClick={() => handleFacebookLogin("instagram")}
+              disabled={connectMutation.isPending}
+              className="group relative flex items-center gap-4 overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-4 shadow-lg shadow-slate-200/50 transition-all hover:-translate-y-1 hover:border-rose-300 hover:shadow-xl hover:shadow-rose-500/10 disabled:opacity-50"
+            >
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-white">
+                <Instagram className="h-8 w-8" />
+              </div>
+              <div className="flex-1 text-left">
+                <h5 className="font-black text-slate-900 transition-colors group-hover:text-rose-500">Instagram Direct</h5>
+                <p className="mt-0.5 text-xs font-bold text-slate-400">Quản lý tin nhắn IG tự động</p>
+              </div>
+              <div className="mr-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-colors group-hover:bg-rose-500 group-hover:text-white">
+                <ExternalLink className="h-4 w-4" />
+              </div>
+            </button>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-slate-50 p-5">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+              <div>
+                <p className="text-xs font-bold text-slate-700">Kết nối an toàn & bảo mật</p>
+                <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500">
+                  Chúng tôi không bao giờ lưu trữ mật khẩu của bạn. Mọi quyền truy cập đều tuân thủ chính sách bảo vệ dữ liệu nghiêm ngặt của Meta.
+                </p>
               </div>
             </div>
-
-            <div className="space-y-6">
-              <Field
-                label="Page / Account ID"
-                value={pageForm.page_id}
-                onChange={(v) => setPageForm({ ...pageForm, page_id: v })}
-                placeholder="Ví dụ: 10459203..."
-                icon={<Smartphone className="h-5 w-5" />}
-              />
-              <Field
-                label="Tên hiển thị nội bộ"
-                value={pageForm.page_name}
-                onChange={(v) => setPageForm({ ...pageForm, page_name: v })}
-                placeholder="Shop phụ kiện Hàn Quốc"
-                icon={<Store className="h-5 w-5" />}
-              />
-            </div>
-
-            <div className="space-y-2 lg:col-span-2">
-              <label className="px-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                System access token
-              </label>
-              <textarea
-                value={pageForm.page_access_token}
-                onChange={(e) => setPageForm({ ...pageForm, page_access_token: e.target.value })}
-                rows={4}
-                placeholder="Dán token từ Facebook Graph API Explorer (EAAx...)"
-                className="w-full rounded-[2rem] border-none bg-slate-50 px-8 py-6 font-mono text-sm font-bold shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-4 pt-6">
-            <button
-              type="button"
-              onClick={() => setShowConnect(false)}
-              className="flex-1 rounded-2xl border-2 border-slate-100 bg-white py-4 text-sm font-black uppercase tracking-widest text-slate-400 transition-all hover:bg-slate-50"
-            >
-              Hủy bỏ
-            </button>
-            <button
-              type="button"
-              onClick={() => connectMutation.mutate()}
-              disabled={!pageForm.page_id || !pageForm.page_access_token || connectMutation.isPending}
-              className="ai-glow flex flex-[2] items-center justify-center gap-3 rounded-2xl bg-accent py-4 text-sm font-black uppercase tracking-[0.2em] text-white shadow-2xl shadow-accent/15 transition-all hover:-translate-y-1 hover:bg-accent-hover active:scale-95 disabled:opacity-50"
-            >
-              {connectMutation.isPending ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
-              ) : (
-                <ExternalLink className="h-5 w-5" />
-              )}
-              Kích hoạt kết nối
-            </button>
           </div>
         </div>
       </Modal>
