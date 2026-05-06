@@ -55,6 +55,21 @@ class AdminService:
 
         top_products = await AdminService._top_products_today(db, workspace_id, today_start_utc)
 
+        from app.models.workspace import ShopPage
+        from app.config import settings
+
+        # Check Facebook connection
+        fb_stmt = select(func.count(ShopPage.id)).where(
+            ShopPage.workspace_id == workspace_id,
+            ShopPage.is_active == True
+        )
+        fb_result = await db.execute(fb_stmt)
+        fb_count = fb_result.scalar() or 0
+        is_facebook_connected = fb_count > 0
+
+        # Check Toss connection
+        is_toss_connected = bool(settings.TOSS_CLIENT_KEY and settings.TOSS_SECRET_KEY)
+
         return DashboardSummary(
             total_revenue_today=await revenue_since(today_start_utc),
             total_revenue_week=await revenue_since(week_start_utc),
@@ -64,6 +79,8 @@ class AdminService:
             orders_flagged=await count_by_status(OrderStatus.FLAGGED),
             top_products=top_products,
             low_stock_alerts=low_stock,
+            is_facebook_connected=is_facebook_connected,
+            is_toss_connected=is_toss_connected,
         )
 
     @staticmethod

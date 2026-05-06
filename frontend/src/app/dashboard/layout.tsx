@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { clearAuth } from "@/lib/auth";
+import { FloatingAssistant } from "@/components/ui/FloatingAssistant";
+import { GuidedTour } from "@/components/ui/GuidedTour";
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -220,6 +222,8 @@ export default function DashboardLayout({
           <div className="mx-auto max-w-[1600px] animate-fade-in">{children}</div>
         </main>
       </div>
+      <FloatingAssistant />
+      <GuidedTour />
     </div>
   );
 }

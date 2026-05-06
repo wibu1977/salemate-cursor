@@ -359,25 +359,53 @@ export default function OrdersPage() {
                         <tr>
                           <td colSpan={6} className="px-8 py-32 text-center">
                             <div className="mx-auto flex max-w-sm flex-col items-center gap-6">
-                              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-50 text-slate-200 shadow-inner ring-4 ring-white">
-                                <Search className="h-10 w-10" />
-                              </div>
-                              <div className="space-y-2">
-                                <p className="text-lg font-black uppercase tracking-widest text-slate-900">
-                                  {STR.noResults}
-                                </p>
-                                <p className="text-sm font-medium leading-relaxed text-slate-400">
-                                  {STR.noResultsHint}
-                                </p>
-                              </div>
-                              {searchQuery && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSearchQuery("")}
-                                  className="text-xs font-black text-accent hover:underline"
-                                >
-                                  {STR.clearSearch}
-                                </button>
+                              {!orders?.length && !searchQuery ? (
+                                <>
+                                  <div className="relative flex h-32 w-32 items-center justify-center">
+                                    <div className="absolute inset-0 rounded-full bg-accent/10 animate-pulse"></div>
+                                    <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-accent-soft text-accent shadow-inner ring-4 ring-white">
+                                      <ShoppingBag className="h-10 w-10" />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-xl font-black text-slate-900">
+                                      Bạn chưa có đơn hàng nào
+                                    </p>
+                                    <p className="text-sm font-medium leading-relaxed text-slate-500">
+                                      Để AI của Salemate có thể tự động tạo đơn và chốt sale, hãy bắt đầu bằng việc thiết lập phương thức thanh toán nhé.
+                                    </p>
+                                  </div>
+                                  <a
+                                    href="/dashboard/settings"
+                                    className="inline-flex items-center gap-2 rounded-2xl bg-ink px-6 py-3.5 text-sm font-black text-white shadow-xl shadow-ink/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-ink/30 active:scale-95"
+                                  >
+                                    <CreditCard className="h-4 w-4" />
+                                    Thiết lập Toss Pay ngay
+                                  </a>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-50 text-slate-200 shadow-inner ring-4 ring-white">
+                                    <Search className="h-10 w-10" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-lg font-black uppercase tracking-widest text-slate-900">
+                                      {STR.noResults}
+                                    </p>
+                                    <p className="text-sm font-medium leading-relaxed text-slate-400">
+                                      {STR.noResultsHint}
+                                    </p>
+                                  </div>
+                                  {searchQuery && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSearchQuery("")}
+                                      className="text-xs font-black text-accent hover:underline"
+                                    >
+                                      {STR.clearSearch}
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>

@@ -15,7 +15,10 @@ import {
   Sun,
   ChevronDown,
   CreditCard,
+  Check,
+  Facebook
 } from "lucide-react";
+import Link from "next/link";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -144,6 +147,58 @@ export default function DashboardPage() {
           <Share2 className="h-5 w-5 text-ink-muted" />
         </button>
       </div>
+
+      {/* SETUP CHECKLIST */}
+      {(!s?.is_facebook_connected || !s?.is_toss_connected) && (
+        <div className="rounded-[1.75rem] bg-gradient-to-br from-[#FFF5F2] to-[#FFF0EC] p-6 shadow-sm ring-1 ring-[#FF5733]/20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-ink">Hoàn tất thiết lập cửa hàng</h2>
+              <p className="mt-1 text-sm text-ink-muted">Hoàn thành các bước dưới đây để AI bắt đầu bán hàng cho bạn.</p>
+            </div>
+            <div className="flex items-center gap-2 font-semibold text-accent">
+              <span className="text-2xl">{[s?.is_facebook_connected, s?.is_toss_connected].filter(Boolean).length}</span>
+              <span className="text-lg text-accent/60">/ 2 hoàn thành</span>
+            </div>
+          </div>
+          
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className={cn("flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 transition hover:shadow-md", s?.is_facebook_connected ? "ring-green-500/50" : "ring-black/[0.05]")}>
+              <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white", s?.is_facebook_connected ? "bg-green-500" : "bg-blue-600")}>
+                {s?.is_facebook_connected ? <Check className="h-5 w-5" /> : <Facebook className="h-5 w-5" />}
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-ink">Kết nối Facebook Page</p>
+                <p className="text-xs text-ink-muted">Cho phép AI đọc và trả lời tin nhắn.</p>
+              </div>
+              {!s?.is_facebook_connected ? (
+                <Link href="/dashboard/connect-facebook" className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700">
+                  Kết nối
+                </Link>
+              ) : (
+                <span className="text-xs font-bold text-green-500">Đã kết nối</span>
+              )}
+            </div>
+
+            <div className={cn("flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 transition hover:shadow-md", s?.is_toss_connected ? "ring-green-500/50" : "ring-black/[0.05]")}>
+              <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white", s?.is_toss_connected ? "bg-green-500" : "bg-[#FF5733]")}>
+                {s?.is_toss_connected ? <Check className="h-5 w-5" /> : <CreditCard className="h-5 w-5" />}
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-ink">Cài đặt Toss Pay</p>
+                <p className="text-xs text-ink-muted">Tự động nhận diện thanh toán ngân hàng.</p>
+              </div>
+              {!s?.is_toss_connected ? (
+                <Link href="/dashboard/settings" className="rounded-full bg-[#FF5733] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#E64A2E]">
+                  Cài đặt
+                </Link>
+              ) : (
+                <span className="text-xs font-bold text-green-500">Đã thiết lập</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-12 lg:grid-rows-[auto_auto]">
         {/* Account card */}

@@ -12,6 +12,8 @@ class DashboardSummary(BaseModel):
     orders_flagged: int = 0
     top_products: list[dict] = []
     low_stock_alerts: list[dict] = []
+    is_facebook_connected: bool = False
+    is_toss_connected: bool = False
 
 
 class OrderListItem(BaseModel):
