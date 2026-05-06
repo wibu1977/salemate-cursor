@@ -51,16 +51,14 @@ interface FBAccountsResponse {
   error?: { message: string };
 }
 
-declare global {
-  interface Window {
-    fbAsyncInit: () => void;
-    FB: {
-      init: (config: Record<string, unknown>) => void;
-      login: (callback: (res: FBLoginResponse) => void, opts: Record<string, string>) => void;
-      api: (path: string, callback: (res: FBAccountsResponse) => void) => void;
-    };
-  }
-}
+type FBWindow = Window & {
+  fbAsyncInit?: () => void;
+  FB?: {
+    init: (config: Record<string, unknown>) => void;
+    login: (callback: (res: FBLoginResponse) => void, opts: Record<string, string>) => void;
+    api: (path: string, callback: (res: FBAccountsResponse) => void) => void;
+  };
+};
 
 interface PageData {
   id: string;
@@ -90,8 +88,8 @@ function SettingsContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    window.fbAsyncInit = function () {
-      window.FB.init({
+    (window as FBWindow).fbAsyncInit = function () {
+      (window as FBWindow).FB?.init({
         appId: process.env.NEXT_PUBLIC_META_APP_ID,
         cookie: true,
         xfbml: true,
@@ -128,17 +126,18 @@ function SettingsContent() {
   });
 
   const handleFacebookLogin = (platform: "facebook" | "instagram" = "facebook") => {
-    if (!window.FB) {
+    const fb = (window as FBWindow).FB;
+    if (!fb) {
       toast("Facebook SDK chưa được tải, vui lòng tải lại trang.", "error");
       return;
     }
 
     toast(`Đang mở trang đăng nhập ${platform === "facebook" ? "Facebook" : "Instagram"}...`, "success");
-    window.FB.login(
+    fb.login(
       function (response: FBLoginResponse) {
         if (response.authResponse) {
           toast("Đang đồng bộ thông tin trang...", "success");
-          window.FB.api("/me/accounts", function (resp: FBAccountsResponse) {
+          fb.api("/me/accounts", function (resp: FBAccountsResponse) {
             if (resp && !resp.error && resp.data && resp.data.length > 0) {
               // Lấy trang đầu tiên (nếu có nhiều trang, có thể làm UI chọn trang sau)
               const page = resp.data[0];
