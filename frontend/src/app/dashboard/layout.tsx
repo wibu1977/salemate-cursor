@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { clearAuth } from "@/lib/auth";
@@ -40,6 +41,15 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  // Redirect new users to onboarding
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const done = localStorage.getItem("salemate_onboarding_done");
+    if (!done) {
+      router.replace("/onboarding");
+    }
+  }, [router]);
 
   const handleLogout = async () => {
     await clearAuth();
