@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi, formatApiError, pagesApi } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
@@ -22,6 +23,10 @@ import {
   Lock,
   HelpCircle,
   LogOut,
+  CreditCard,
+  ScanSearch,
+  BookOpen,
+  Wallet,
 } from "lucide-react";
 
 interface PageData {
@@ -32,12 +37,14 @@ interface PageData {
   is_active: boolean;
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [shopName, setShopName] = useState("");
   const [reportHour, setReportHour] = useState(9);
   const [language, setLanguage] = useState("vi");
+  const [activeTab, setActiveTab] = useState("workspace");
   const [showConnect, setShowConnect] = useState(false);
   const [pageForm, setPageForm] = useState({
     page_id: "",
@@ -45,6 +52,14 @@ export default function SettingsPage() {
     page_access_token: "",
     platform: "facebook",
   });
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) setActiveTab(tab);
+    
+    const action = searchParams.get("action");
+    if (action === "connect-facebook") setShowConnect(true);
+  }, [searchParams]);
 
   const { data: pages } = useQuery({
     queryKey: ["pages"],
@@ -108,16 +123,18 @@ export default function SettingsPage() {
           <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">DANH MỤC</p>
           <nav className="space-y-1">
             {[
-              { label: "Workspace", icon: <Store className="h-5 w-5" />, active: true },
-              { label: "Kênh kết nối", icon: <Globe className="h-5 w-5" />, active: false },
-              { label: "Bảo mật", icon: <ShieldCheck className="h-5 w-5" />, active: false },
-              { label: "Thông báo", icon: <Bell className="h-5 w-5" />, active: false },
-              { label: "Trợ giúp", icon: <HelpCircle className="h-5 w-5" />, active: false },
-            ].map((item, i) => (
+              { id: "workspace", label: "Workspace", icon: <Store className="h-5 w-5" /> },
+              { id: "channels", label: "Kênh kết nối", icon: <Globe className="h-5 w-5" /> },
+              { id: "payment", label: "Thanh toán", icon: <CreditCard className="h-5 w-5" /> },
+              { id: "security", label: "Bảo mật", icon: <ShieldCheck className="h-5 w-5" /> },
+              { id: "notifications", label: "Thông báo", icon: <Bell className="h-5 w-5" /> },
+              { id: "help", label: "Trợ giúp", icon: <HelpCircle className="h-5 w-5" /> },
+            ].map((item) => (
               <button
-                key={i}
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
                 className={`flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-sm font-black transition-all ${
-                  item.active
+                  activeTab === item.id
                     ? "bg-accent text-white shadow-xl shadow-accent/15"
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 }`}
@@ -130,7 +147,8 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-10 lg:col-span-9">
-          <section className="card-premium relative space-y-8 overflow-hidden border-slate-100 bg-white p-10 shadow-2xl shadow-slate-200/50">
+          {activeTab === "workspace" && (
+            <section className="card-premium relative space-y-8 overflow-hidden border-slate-100 bg-white p-10 shadow-2xl shadow-slate-200/50">
             <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-accent-soft/30 blur-3xl" />
 
             <div className="flex items-center gap-4">
@@ -209,9 +227,11 @@ export default function SettingsPage() {
                 Lưu cấu hình workspace
               </button>
             </div>
-          </section>
+            </section>
+          )}
 
-          <section className="space-y-6">
+          {activeTab === "channels" && (
+            <section className="space-y-6">
             <div className="flex items-center justify-between px-2">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-soft text-accent">
@@ -297,7 +317,76 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-          </section>
+            </section>
+          )}
+
+          {activeTab === "payment" && (
+            <section className="space-y-8">
+              <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+                  <CreditCard className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Phương thức thanh toán</h2>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                    Cấu hình nhận thanh toán từ khách hàng
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6">
+                {/* OCR Method */}
+                <div className="relative overflow-hidden rounded-[2.5rem] border-2 border-accent bg-white p-8 shadow-xl shadow-accent/10">
+                  <div className="absolute right-0 top-0 rounded-bl-[2rem] bg-accent px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-accent/20">
+                    Mặc định
+                  </div>
+                  <div className="flex flex-col gap-6 md:flex-row md:items-start">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.5rem] bg-accent-soft text-accent">
+                      <ScanSearch className="h-8 w-8" />
+                    </div>
+                    <div className="flex-1 space-y-3">
+                      <h3 className="text-lg font-black text-slate-900">Trợ lý AI Quét ảnh chuyển khoản (OCR)</h3>
+                      <p className="text-sm font-medium leading-relaxed text-slate-500">
+                        Hệ thống AI tiên tiến sẽ <strong>tự động đọc và xác thực hóa đơn chuyển khoản</strong> thông qua hình ảnh khách hàng gửi trong chat. 
+                        Phương thức này được bật sẵn, hoàn toàn miễn phí và không cần cài đặt phức tạp. Giúp bạn chốt đơn nhanh chóng, tiện lợi và tiết kiệm tối đa phí giao dịch.
+                      </p>
+                      <div className="flex items-center gap-2 pt-2">
+                        <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600 ring-1 ring-emerald-200">
+                          <CheckCircle2 className="h-4 w-4" />
+                          Đang hoạt động
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toss Pay Method */}
+                <div className="group relative overflow-hidden rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40 transition-all hover:-translate-y-1 hover:shadow-2xl hover:border-blue-100">
+                  <div className="flex flex-col gap-6 md:flex-row md:items-start">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.5rem] bg-blue-50 text-blue-600">
+                      <Wallet className="h-8 w-8" />
+                    </div>
+                    <div className="flex-1 space-y-3">
+                      <h3 className="text-lg font-black text-slate-900 transition-colors group-hover:text-blue-600">Cổng thanh toán đa kênh (Toss Pay)</h3>
+                      <p className="text-sm font-medium leading-relaxed text-slate-500">
+                        Nâng tầm trải nghiệm mua sắm với cổng thanh toán toàn diện. Hỗ trợ đa dạng phương thức phổ biến nhất Hàn Quốc bao gồm <strong>Naver Pay, Kakao Pay và Toss</strong>. Giúp tăng tỷ lệ chuyển đổi chốt đơn, cho phép khách hàng thanh toán nhanh chóng chỉ với 1 chạm.
+                      </p>
+                      
+                      <div className="flex flex-col items-start gap-4 pt-4 sm:flex-row sm:items-center">
+                        <button className="ai-glow flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-blue-600/20 transition-all hover:bg-blue-700 active:scale-95">
+                          Thiết lập Toss Pay
+                        </button>
+                        <a href="#" className="flex items-center gap-2 text-xs font-bold text-slate-400 transition-colors hover:text-blue-600">
+                          <BookOpen className="h-4 w-4" />
+                          Tài liệu hướng dẫn đăng ký
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
 
@@ -407,6 +496,14 @@ export default function SettingsPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Đang tải cài đặt...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }
 

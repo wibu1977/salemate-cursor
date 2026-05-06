@@ -172,7 +172,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-ink-muted">Cho phép AI đọc và trả lời tin nhắn.</p>
               </div>
               {!s?.is_facebook_connected ? (
-                <Link href="/dashboard/connect-facebook" className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700">
+                <Link href="/dashboard/settings?tab=channels&action=connect-facebook" className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700">
                   Kết nối
                 </Link>
               ) : (
@@ -189,7 +189,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-ink-muted">Tự động nhận diện thanh toán ngân hàng.</p>
               </div>
               {!s?.is_toss_connected ? (
-                <Link href="/dashboard/settings" className="rounded-full bg-[#FF5733] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#E64A2E]">
+                <Link href="/dashboard/settings?tab=payment" className="rounded-full bg-[#FF5733] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#E64A2E]">
                   Cài đặt
                 </Link>
               ) : (
