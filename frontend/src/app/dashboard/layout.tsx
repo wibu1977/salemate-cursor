@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { clearAuth } from "@/lib/auth";
 import { FloatingAssistant } from "@/components/ui/FloatingAssistant";
 import { GuidedTour } from "@/components/ui/GuidedTour";
+import { authApi } from "@/lib/api";
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -42,14 +43,47 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
 
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [isDone, setIsDone] = useState(false);
+
   // Redirect new users to onboarding
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const done = localStorage.getItem("salemate_onboarding_done");
-    if (!done) {
-      router.replace("/onboarding");
+    async function checkStatus() {
+      try {
+        const { data } = await authApi.authMe();
+        if (!data.onboarding_completed) {
+          router.replace("/onboarding");
+        } else {
+          setIsDone(true);
+          localStorage.setItem("salemate_onboarding_done", "1");
+        }
+      } catch (err) {
+        console.error("Failed to check onboarding status", err);
+      } finally {
+        setCheckingOnboarding(false);
+      }
     }
+    checkStatus();
   }, [router]);
+
+  if (checkingOnboarding && !isDone) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-page">
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative">
+            <div className="h-20 w-20 animate-spin rounded-full border-4 border-black/[0.04] border-t-emerald-500" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="h-10 w-10 animate-pulse rounded-full bg-emerald-500/20" />
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm font-bold tracking-tight text-ink">Đang khởi tạo...</p>
+            <p className="text-[11px] font-medium text-ink-muted">Chuẩn bị không gian làm việc của bạn</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = async () => {
     await clearAuth();

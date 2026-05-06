@@ -14,6 +14,7 @@ class DashboardSummary(BaseModel):
     low_stock_alerts: list[dict] = []
     is_facebook_connected: bool = False
     is_toss_connected: bool = False
+    onboarding_completed: bool = False
 
 
 class OrderListItem(BaseModel):

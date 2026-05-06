@@ -44,16 +44,17 @@ async def auth_me(
             if uid:
                 meta = payload.get("user_metadata") or {}
                 name = meta.get("full_name") or meta.get("name")
-                ws_id = await AuthService.ensure_workspace_for_supabase_user(
+                workspace = await AuthService.ensure_workspace_for_supabase_user(
                     db,
                     user_id=uid,
                     email=payload.get("email"),
                     name=name if isinstance(name, str) else None,
                 )
                 return AuthMeResponse(
-                    workspace_id=ws_id,
+                    workspace_id=workspace.id,
                     auth="supabase",
                     email=payload.get("email"),
+                    onboarding_completed=workspace.onboarding_completed,
                 )
 
     try:
@@ -65,7 +66,19 @@ async def auth_me(
         wid = legacy.get("workspace_id")
         if not wid:
             raise HTTPException(status_code=401, detail="Invalid token")
-        return AuthMeResponse(workspace_id=uuid.UUID(str(wid)), auth="legacy", email=None)
+        
+        ws_id = uuid.UUID(str(wid))
+        r = await db.execute(select(Workspace).where(Workspace.id == ws_id))
+        ws = r.scalar_one_or_none()
+        if not ws:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+        return AuthMeResponse(
+            workspace_id=ws_id, 
+            auth="legacy", 
+            email=None, 
+            onboarding_completed=ws.onboarding_completed
+        )
     except jwt.PyJWTError as e:
         raise HTTPException(status_code=401, detail="Invalid token") from e
     except ValueError as e:

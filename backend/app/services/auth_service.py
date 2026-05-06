@@ -23,7 +23,7 @@ class AuthService:
         user_id: uuid.UUID,
         email: str | None,
         name: str | None,
-    ) -> uuid.UUID:
+    ) -> Workspace:
         """Tạo app_users + workspace mặc định nếu chưa có; trả về workspace.id."""
         r = await db.execute(select(AppUser).where(AppUser.id == user_id))
         user = r.scalar_one_or_none()
@@ -39,7 +39,7 @@ class AuthService:
         r2 = await db.execute(select(Workspace).where(Workspace.owner_user_id == user_id))
         ws = r2.scalar_one_or_none()
         if ws:
-            return ws.id
+            return ws
 
         display = (name or email or "User").strip() or "User"
         ws = Workspace(
@@ -51,7 +51,7 @@ class AuthService:
         )
         db.add(ws)
         await db.flush()
-        return ws.id
+        return ws
 
     @staticmethod
     async def facebook_login(db: AsyncSession, access_token: str) -> TokenResponse:
@@ -79,10 +79,7 @@ class AuthService:
             db.add(workspace)
             await db.flush()
 
-        # DB: flush/select ở trên có thể ném SQLAlchemyError; commit do get_db().
         token = AuthService._create_jwt(workspace.id, fb_id)
-        # Không commit ở đây — get_db() sẽ commit một lần.
-
         return TokenResponse(access_token=token, workspace_id=workspace.id)
 
     @staticmethod
@@ -96,9 +93,18 @@ class AuthService:
         if not workspace:
             raise ValueError("Workspace not found")
 
-        workspace.name = payload.name
+        if payload.name:
+            workspace.name = payload.name
         workspace.language = payload.language
         workspace.report_hour = payload.report_hour
+        workspace.onboarding_completed = True
+        
+        if payload.bank_account:
+            workspace.bank_account = payload.bank_account
+        if payload.bank_name:
+            workspace.bank_name = payload.bank_name
+        if payload.bank_holder:
+            workspace.bank_holder = payload.bank_holder
 
         # Nếu có user_access_token: tự động exchange + lấy page tokens từ Meta Graph API
         if payload.user_access_token:

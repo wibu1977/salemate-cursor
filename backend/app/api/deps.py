@@ -87,13 +87,13 @@ async def get_current_workspace_id(
         if uid:
             meta = payload.get("user_metadata") or {}
             name = meta.get("full_name") or meta.get("name")
-            ws_id = await AuthService.ensure_workspace_for_supabase_user(
+            workspace = await AuthService.ensure_workspace_for_supabase_user(
                 db,
                 user_id=uid,
                 email=payload.get("email"),
                 name=name if isinstance(name, str) else None,
             )
-            return ws_id
+            return workspace.id
 
     try:
         legacy = jwt.decode(

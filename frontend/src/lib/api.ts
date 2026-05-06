@@ -188,7 +188,13 @@ export const pagesApi = {
 };
 
 export const authApi = {
-  authMe: () => api.get<{ workspace_id: string; auth: string; email: string | null }>("/admin/auth/me"),
+  authMe: () =>
+    api.get<{
+      workspace_id: string;
+      auth: string;
+      email: string | null;
+      onboarding_completed: boolean;
+    }>("/admin/auth/me"),
   facebookLogin: (accessToken: string) =>
     api.post("/admin/auth/facebook", { access_token: accessToken }),
   setupWorkspace: (data: Record<string, unknown>) =>

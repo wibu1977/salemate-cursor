@@ -70,6 +70,13 @@ class AdminService:
         # Check Toss connection
         is_toss_connected = bool(settings.TOSS_CLIENT_KEY and settings.TOSS_SECRET_KEY)
 
+        # Get workspace details for onboarding status
+        from app.models.workspace import Workspace
+        ws_stmt = select(Workspace).where(Workspace.id == workspace_id)
+        ws_result = await db.execute(ws_stmt)
+        workspace = ws_result.scalar_one_or_none()
+        onboarding_completed = workspace.onboarding_completed if workspace else False
+
         return DashboardSummary(
             total_revenue_today=await revenue_since(today_start_utc),
             total_revenue_week=await revenue_since(week_start_utc),
@@ -81,6 +88,7 @@ class AdminService:
             low_stock_alerts=low_stock,
             is_facebook_connected=is_facebook_connected,
             is_toss_connected=is_toss_connected,
+            onboarding_completed=onboarding_completed,
         )
 
     @staticmethod

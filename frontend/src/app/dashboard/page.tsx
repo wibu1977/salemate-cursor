@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { dashboardApi } from "@/lib/api";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -74,10 +76,20 @@ function DotMatrix({
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { data: summary, isLoading } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: () => dashboardApi.getSummary().then((r) => r.data),
   });
+
+  useEffect(() => {
+    if (isLoading || !summary) return;
+    
+    // Nếu chưa hoàn thành onboarding (theo dữ liệu server), chuyển hướng về trang onboarding
+    if (!summary.onboarding_completed) {
+      router.push("/onboarding");
+    }
+  }, [summary, isLoading, router]);
 
   if (isLoading) {
     return (

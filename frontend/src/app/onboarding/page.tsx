@@ -214,6 +214,17 @@ export default function OnboardingPage() {
   const submitBank = async (field: "account" | "bank" | "holder") => {
     const val = input.trim();
     if (!val) return;
+
+    // Basic validation
+    if (field === "account" && !/^\d+$/.test(val.replace(/\s|-/g, ""))) {
+      await botMsg("⚠️ Số tài khoản thường chỉ bao gồm các chữ số. Bạn vui lòng kiểm tra lại nhé?");
+      return;
+    }
+    if (field === "holder" && val.length < 2) {
+      await botMsg("⚠️ Tên chủ tài khoản có vẻ hơi ngắn. Bạn vui lòng nhập đầy đủ nhé?");
+      return;
+    }
+
     setInput("");
     userMsg(val);
     if (field === "account") {
@@ -228,19 +239,27 @@ export default function OnboardingPage() {
       const full = { ...bank, holder: val };
       setBank(full);
       try {
-        await authApi.setupWorkspace({ bank_account: full.account, bank_name: full.bankName, bank_holder: full.holder });
-      } catch { /* silent */ }
-      await botMsg(`✅ Đã lưu!\n• Số TK: ${full.account}\n• Ngân hàng: ${full.bankName}\n• Chủ TK: ${full.holder}`, 800);
-      setTimeout(() => goProduct(), 1600);
+        await authApi.setupWorkspace({ 
+          bank_account: full.account, 
+          bank_name: full.bankName, 
+          bank_holder: full.holder 
+        });
+        await botMsg(`✅ Tuyệt vời! Tôi đã lưu thông tin thanh toán của bạn:\n• Số TK: ${full.account}\n• Ngân hàng: ${full.bankName}\n• Chủ TK: ${full.holder}`, 800);
+        setTimeout(() => goProduct(), 1600);
+      } catch (err) {
+        console.error("Failed to save bank info:", err);
+        await botMsg("Có lỗi nhỏ khi lưu thông tin, nhưng chúng ta vẫn có thể tiếp tục nhé!", 800);
+        setTimeout(() => goProduct(), 1200);
+      }
     }
     setTimeout(() => inputRef.current?.focus(), 200);
   };
 
   const goProduct = async () => {
     setStep("product-name");
-    await botMsg("Gần xong rồi! Hãy thêm sản phẩm để AI bắt đầu bán hàng nhé 🛍️", 600);
+    await botMsg("Gần xong rồi! Hãy thêm sản phẩm đầu tiên để tôi có thể bắt đầu bán hàng cho bạn nhé 🛍️", 600);
     await botMsg(
-      "Bạn muốn nhập tay từng cái hay đồng bộ từ Google Sheets?", 
+      "Bạn muốn nhập tay sản phẩm hay đồng bộ từ Google Sheets?", 
       1200,
       <div className="flex flex-col gap-2">
         <button onClick={startSheetSync}
@@ -263,8 +282,8 @@ export default function OnboardingPage() {
 
   const startSheetSync = async () => {
     userMsg("Nhập từ Google Sheets 📊");
-    await botMsg("Tuyệt vời! Phương pháp này giúp bạn quản lý hàng ngàn sản phẩm dễ dàng.", 800);
-    await botMsg("Hãy dán ID của Google Spreadsheet vào đây nhé (ví dụ: 1BxiMVs0XRA5...)", 1500);
+    await botMsg("Lựa chọn thông minh! Việc này giúp quản lý hàng loạt sản phẩm cực kỳ nhanh chóng.", 800);
+    await botMsg("Hãy dán Spreadsheet ID của bạn vào đây (ví dụ: 1BxiMVs0XRA5...)", 1500);
     setStep("product-sheet");
     setTimeout(() => inputRef.current?.focus(), 1600);
   };
@@ -272,17 +291,24 @@ export default function OnboardingPage() {
   const submitSheetId = async () => {
     const id = input.trim();
     if (!id) return;
+    
+    if (id.length < 20) {
+      await botMsg("⚠️ Spreadsheet ID có vẻ không đúng (thường dài hơn 20 ký tự). Bạn vui lòng kiểm tra lại nhé?");
+      return;
+    }
+
     setInput("");
     userMsg(`Sheet ID: ${id.slice(0, 8)}...`);
     setTyping(true);
     try {
       const res = await inventoryApi.syncSheets(id);
       const d = res.data;
-      await botMsg(`✅ Đồng bộ hoàn tất! Đã thêm ${d.created} sản phẩm và cập nhật ${d.updated} sản phẩm.`, 1000);
+      await botMsg(`🎉 Thành công rực rỡ! Đã thêm ${d.created} sản phẩm và cập nhật ${d.updated} sản phẩm từ Google Sheets.`, 1000);
       setTimeout(() => finishOnboarding(), 1200);
-    } catch {
-      await botMsg("❌ Có lỗi khi kết nối Google Sheets. Hãy kiểm tra ID và quyền chia sẻ của trang tính.", 1000);
-      setStep("product-name"); // Quay lại bước chọn
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || "Có lỗi khi kết nối Google Sheets.";
+      await botMsg(`❌ ${errorMsg}\n\nHãy đảm bảo bạn đã cấp quyền "Bất kỳ ai có liên kết đều có thể xem" (Anyone with link can view) cho trang tính nhé.`, 1000);
+      // Stay on the same step to allow retry
     } finally {
       setTyping(false);
     }
@@ -291,6 +317,12 @@ export default function OnboardingPage() {
   const submitProduct = async (field: "name" | "price" | "desc", skipDesc?: boolean) => {
     const val = skipDesc ? "" : input.trim();
     if (!skipDesc && !val && field !== "desc") return;
+
+    if (field === "price" && (isNaN(Number(val)) || Number(val) < 0)) {
+      await botMsg("⚠️ Giá sản phẩm phải là một con số hợp lệ. Bạn nhập lại nhé?");
+      return;
+    }
+
     setInput("");
     if (field === "name") {
       if (!val) return;
@@ -306,7 +338,18 @@ export default function OnboardingPage() {
       setStep("product-desc");
     } else {
       if (val) userMsg(val); else userMsg("Bỏ qua mô tả");
-      await botMsg(`✅ Đã thêm sản phẩm ${product.name}!`, 800);
+      try {
+        await inventoryApi.createProduct({
+          name: product.name,
+          price: parseInt(product.price) || 0,
+          description: val || undefined,
+          quantity: 100, // Default for onboarding
+        });
+        await botMsg(`✅ Đã thêm sản phẩm "${product.name}" vào kho hàng của bạn!`, 800);
+      } catch (err) {
+        console.error("Failed to save product:", err);
+        await botMsg("Có lỗi khi lưu sản phẩm, nhưng không sao, chúng ta tiếp tục nhé!", 800);
+      }
       setTimeout(() => finishOnboarding(), 1500);
     }
     setTimeout(() => inputRef.current?.focus(), 200);
@@ -331,6 +374,11 @@ export default function OnboardingPage() {
       </div>
     );
     if (typeof window !== "undefined") localStorage.setItem("salemate_onboarding_done", "1");
+    try {
+      await authApi.setupWorkspace({}); // Mark as completed on server
+    } catch (err) {
+      console.error("Failed to mark onboarding as completed on server", err);
+    }
   };
 
   // ── Input field shortcut ─────────────────────────────────────────────────
@@ -355,7 +403,20 @@ export default function OnboardingPage() {
     if (typing) return null;
     switch (step) {
       case "bank-account": return inputField("VD: 1234567890", () => submitBank("account"));
-      case "bank-name":    return inputField("VD: Vietcombank, BIDV, ACB...", () => submitBank("bank"));
+      case "bank-name":    
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {["Vietcombank", "BIDV", "ACB", "Techcombank", "MB Bank"].map(b => (
+                <button key={b} onClick={() => { setInput(b); setTimeout(() => submitBank("bank"), 10); }}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-all hover:border-emerald-200 hover:bg-emerald-50">
+                  {b}
+                </button>
+              ))}
+            </div>
+            {inputField("Hoặc nhập tên ngân hàng khác...", () => submitBank("bank"))}
+          </div>
+        );
       case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"));
       case "product-name":  return inputField("Hoặc nhập tên sản phẩm...", () => submitProduct("name"));
       case "product-price": return inputField("50000", () => submitProduct("price"), "number");
@@ -401,7 +462,11 @@ export default function OnboardingPage() {
         </div>
 
         <button
-          onClick={() => { localStorage.setItem("salemate_onboarding_done", "1"); router.push("/dashboard"); }}
+          onClick={async () => { 
+            localStorage.setItem("salemate_onboarding_done", "1"); 
+            try { await authApi.setupWorkspace({}); } catch(e){}
+            router.push("/dashboard"); 
+          }}
           className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
         >
           <X className="h-3.5 w-3.5" /> Bỏ qua tất cả
