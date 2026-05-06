@@ -4,12 +4,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { pagesApi, authApi, inventoryApi } from "@/lib/api";
-import { RefreshCw, Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
+import { isAxiosError } from "axios";
+import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
 
 // ── Facebook SDK types (type alias avoids global Window conflict) ───────────
 interface FBPageData { id: string; name: string; access_token: string; }
 interface FBAuthResponse { accessToken: string; }
-interface FBLoginResponse { status: string; authResponse?: FBAuthResponse; }
 type SdkWindow = Window & typeof globalThis & {
   fbAsyncInit?: () => void;
   FB?: {
@@ -305,8 +305,15 @@ export default function OnboardingPage() {
       const d = res.data;
       await botMsg(`🎉 Thành công rực rỡ! Đã thêm ${d.created} sản phẩm và cập nhật ${d.updated} sản phẩm từ Google Sheets.`, 1000);
       setTimeout(() => finishOnboarding(), 1200);
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || "Có lỗi khi kết nối Google Sheets.";
+    } catch (err: unknown) {
+      let errorMsg = "Có lỗi khi kết nối Google Sheets.";
+      if (isAxiosError(err)) {
+        const data = err.response?.data;
+        if (data && typeof data === "object" && data !== null && "detail" in data) {
+          const d = (data as { detail: unknown }).detail;
+          errorMsg = typeof d === "string" ? d : String(d);
+        }
+      }
       await botMsg(`❌ ${errorMsg}\n\nHãy đảm bảo bạn đã cấp quyền "Bất kỳ ai có liên kết đều có thể xem" (Anyone with link can view) cho trang tính nhé.`, 1000);
       // Stay on the same step to allow retry
     } finally {
@@ -464,7 +471,7 @@ export default function OnboardingPage() {
         <button
           onClick={async () => { 
             localStorage.setItem("salemate_onboarding_done", "1"); 
-            try { await authApi.setupWorkspace({}); } catch(e){}
+            try { await authApi.setupWorkspace({}); } catch { /* bỏ qua nếu đã setup */ }
             router.push("/dashboard"); 
           }}
           className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
