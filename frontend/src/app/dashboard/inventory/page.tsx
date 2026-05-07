@@ -23,7 +23,6 @@ import {
   Sparkles
 } from "lucide-react";
 import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
-import Script from "next/script";
 
 interface ProductData {
   id: string;

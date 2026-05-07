@@ -47,11 +47,23 @@ export default function OnboardingPage() {
   const [connectedPage, setConnectedPage] = useState<string | null>(null);
   const [bank, setBank] = useState({ account: "", bankName: "", holder: "" });
   const [product, setProduct] = useState({ name: "", price: "" });
-  const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
-  const [availableTabs, setAvailableTabs] = useState<string[]>([]);
+  const googleReturnHandled = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const googleReturnHandled = useRef(false);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const botMsg = useCallback((text: string, delay = 900, component?: React.ReactNode): Promise<void> =>
+    new Promise((res) => {
+      setTyping(true);
+      setTimeout(() => {
+        setTyping(false);
+        setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "bot", text, component }]);
+        res();
+      }, delay);
+    }), []);
+
+  const userMsg = useCallback((text: string) =>
+    setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "user", text }]), []);
 
   // Auto-scroll
   useEffect(() => {
@@ -80,19 +92,6 @@ export default function OnboardingPage() {
     }
   }, [searchParams, botMsg]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const botMsg = useCallback((text: string, delay = 900, component?: React.ReactNode): Promise<void> =>
-    new Promise((res) => {
-      setTyping(true);
-      setTimeout(() => {
-        setTyping(false);
-        setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "bot", text, component }]);
-        res();
-      }, delay);
-    }), []);
-
-  const userMsg = useCallback((text: string) =>
-    setMsgs((p) => [...p, { id: crypto.randomUUID(), role: "user", text }]), []);
 
   // ── Initial greeting ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -321,11 +320,9 @@ export default function OnboardingPage() {
   };
 
   const onSheetSelected = async (id: string) => {
-    setSelectedSheetId(id);
     await botMsg("Đang đọc các trang tính (tabs) trong file của bạn... 🔍", 600);
     try {
       const { data: tabs } = await inventoryApi.sheetTabs(id);
-      setAvailableTabs(tabs.titles);
       if (tabs.titles.length === 0) {
         await botMsg("⚠️ File này có vẻ không có trang tính nào hợp lệ.");
         return;
