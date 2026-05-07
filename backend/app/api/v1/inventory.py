@@ -1,14 +1,26 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.api.deps import get_current_workspace_id
+from app.models.import_job import ImportJob, ImportJobStatus
+from app.models.workspace import Workspace
 from app.schemas.inventory import (
-    ProductCreate, ProductUpdate, ProductResponse,
-    SyncGoogleSheetsRequest, SyncResult,
+    ProductCreate,
+    ProductUpdate,
+    ProductResponse,
+    SheetImportRequest,
+    ImportJobCreateResponse,
+    ImportJobStatusResponse,
+    SheetImportSummary,
+    SheetTabsResponse,
 )
+from app.services.import_job_runner import run_sheets_import_job
 from app.services.inventory_service import InventoryService
+from app.services.sheets_import_service import list_sheet_titles
 
 router = APIRouter()
 
@@ -40,11 +52,87 @@ async def update_product(
     return await InventoryService.update_product(db, workspace_id, product_id, payload)
 
 
-@router.post("/sync", response_model=SyncResult)
-async def sync_google_sheets(
-    payload: SyncGoogleSheetsRequest,
+@router.get("/google/spreadsheets/{spreadsheet_id}/tabs", response_model=SheetTabsResponse)
+async def spreadsheet_tabs(
+    spreadsheet_id: str,
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Sync inventory from Google Sheets."""
-    return await InventoryService.sync_from_sheets(db, workspace_id, payload)
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    result = await db.execute(stmt)
+    ws = result.scalar_one_or_none()
+    if not ws or not (ws.google_refresh_token or "").strip():
+        raise HTTPException(status_code=400, detail="Chưa kết nối Google. Dùng /admin/auth/google/login trước.")
+    try:
+        titles = await list_sheet_titles(db, ws, spreadsheet_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return SheetTabsResponse(titles=titles)
+
+
+@router.post("/import/sheets", response_model=ImportJobCreateResponse)
+async def enqueue_sheet_import(
+    payload: SheetImportRequest,
+    background_tasks: BackgroundTasks,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    result = await db.execute(stmt)
+    ws = result.scalar_one_or_none()
+    if not ws or not (ws.google_refresh_token or "").strip():
+        raise HTTPException(status_code=400, detail="Chưa kết nối Google.")
+
+    job = ImportJob(
+        workspace_id=workspace_id,
+        status=ImportJobStatus.pending.value,
+        kind=f"sheets_{payload.entity}",
+        progress_percent=0,
+    )
+    db.add(job)
+    await db.flush()
+    await db.refresh(job)
+
+    background_tasks.add_task(
+        run_sheets_import_job,
+        job.id,
+        workspace_id,
+        payload.spreadsheet_id,
+        payload.sheet_name,
+        payload.entity,
+        payload.header_row,
+        payload.data_start_row,
+        payload.range_a1,
+    )
+    return ImportJobCreateResponse(job_id=job.id)
+
+
+@router.get("/import/jobs/{job_id}", response_model=ImportJobStatusResponse)
+async def get_import_job(
+    job_id: uuid.UUID,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(ImportJob).where(
+        ImportJob.id == job_id,
+        ImportJob.workspace_id == workspace_id,
+    )
+    result = await db.execute(stmt)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job.")
+
+    summary = None
+    if job.result_json:
+        try:
+            summary = SheetImportSummary.model_validate(job.result_json)
+        except Exception:
+            summary = None
+
+    return ImportJobStatusResponse(
+        id=job.id,
+        status=job.status,
+        progress_percent=job.progress_percent,
+        result=summary,
+        error_message=job.error_message,
+    )

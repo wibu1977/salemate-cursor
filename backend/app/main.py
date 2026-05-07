@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from app.config import get_settings
-from app.api.v1 import webhook, payments, admin, campaigns, inventory, pages, webview_campaigns
+from app.api.v1 import webhook, payments, admin, campaigns, inventory, pages, webview_campaigns, google_auth
 
 settings = get_settings()
 logger = logging.getLogger("salemate")
@@ -76,6 +76,7 @@ app.include_router(payments.router, prefix="/payments", tags=["Payments & OCR"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin Dashboard"])
 app.include_router(campaigns.router, prefix="/admin/campaigns", tags=["Campaigns"])
 app.include_router(inventory.router, prefix="/admin/inventory", tags=["Inventory"])
+app.include_router(google_auth.router, prefix="/admin/auth/google", tags=["Google OAuth"])
 app.include_router(pages.router, prefix="/admin/pages", tags=["Page Management"])
 app.include_router(
     webview_campaigns.router,

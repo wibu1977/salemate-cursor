@@ -1,9 +1,9 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inventoryApi } from "@/lib/api";
+import { inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
@@ -19,9 +19,11 @@ import {
   DollarSign,
   AlertCircle,
   CheckCircle2,
-  ExternalLink,
-  Layers
+  Layers,
+  Sparkles
 } from "lucide-react";
+import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
+import Script from "next/script";
 
 interface ProductData {
   id: string;
@@ -52,8 +54,59 @@ export default function InventoryPage() {
   const [editProduct, setEditProduct] = useState<ProductData | null>(null);
   const [showSync, setShowSync] = useState(false);
   const [sheetId, setSheetId] = useState("");
+  const [sheetName, setSheetName] = useState("Sheet1");
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const { data: googleStatus } = useQuery({
+    queryKey: ["google-oauth-status"],
+    queryFn: () => googleAuthApi.status().then((r) => r.data),
+  });
+
+  const normalizeSheetId = (raw: string) => {
+    const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return m?.[1] || raw.trim();
+  };
+
+  const sheetIdNormalized = normalizeSheetId(sheetId);
+
+  const openPicker = async () => {
+    try {
+      const { data: cfg } = await googleAuthApi.pickerConfig();
+      if (!cfg.developer_key) {
+        toast("Chưa cấu hình GOOGLE_PICKER_API_KEY", "error");
+        return;
+      }
+      const id = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key);
+      if (id) setSheetId(id);
+    } catch (e: unknown) {
+      toast(formatApiError(e), "error");
+    }
+  };
+
+  const { data: tabData } = useQuery({
+    queryKey: ["sheet-tabs", sheetIdNormalized],
+    queryFn: () => inventoryApi.sheetTabs(sheetIdNormalized).then((r) => r.data),
+    enabled:
+      !!googleStatus?.connected &&
+      sheetIdNormalized.length >= 20,
+  });
+
+  useEffect(() => {
+    if (tabData?.titles?.length && !tabData.titles.includes(sheetName)) {
+      setSheetName(tabData.titles[0]);
+    }
+  }, [tabData, sheetName]);
+
+  const connectGoogle = () => {
+    const next =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/dashboard/inventory?google=connected`
+        : "";
+    googleAuthApi.loginUrl(next).then(({ data }) => {
+      window.location.href = data.authorization_url;
+    });
+  };
 
   const { data: products, isLoading } = useQuery({
     queryKey: ["products"],
@@ -102,16 +155,34 @@ export default function InventoryPage() {
     onError: () => toast("Cập nhật thất bại", "error"),
   });
 
-  const syncMutation = useMutation({
-    mutationFn: () => inventoryApi.syncSheets(sheetId),
-    onSuccess: (res) => {
-      const d = res.data;
-      toast(`Đồng bộ hoàn tất: ${d.created} mới, ${d.updated} cập nhật`, "success");
+  const importSheetsMutation = useMutation({
+    mutationFn: async () => {
+      const { data: start } = await inventoryApi.importSheets({
+        spreadsheet_id: sheetIdNormalized,
+        sheet_name: sheetName,
+        entity: "products",
+        header_row: 1,
+        data_start_row: 2,
+      });
+      return pollImportJob(String(start.job_id));
+    },
+    onSuccess: (job) => {
+      queryClient.invalidateQueries({ queryKey: ["google-oauth-status"] });
+      if (job.status === "failed") {
+        toast(job.error_message || "Import thất bại", "error");
+        return;
+      }
+      const d = job.result;
+      toast(
+        `Đồng bộ xong: ${d?.created ?? 0} mới, ${d?.updated ?? 0} cập nhật` +
+          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi)` : ""),
+        "success"
+      );
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowSync(false);
       setSheetId("");
     },
-    onError: () => toast("Đồng bộ dữ liệu thất bại", "error"),
+    onError: (e: unknown) => toast(formatApiError(e), "error"),
   });
 
   const openEdit = (p: ProductData) => {
@@ -145,7 +216,7 @@ export default function InventoryPage() {
             onClick={() => setShowSync(!showSync)} 
             className="group flex items-center gap-3 rounded-2xl bg-white px-6 py-3.5 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:ring-accent/25 active:scale-95"
           >
-            <RefreshCw className={`h-5 w-5 text-accent group-hover:rotate-180 transition-transform duration-500 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-5 w-5 text-accent group-hover:rotate-180 transition-transform duration-500 ${importSheetsMutation.isPending ? 'animate-spin' : ''}`} />
             ĐỒNG BỘ SHEETS
           </button>
           <button 
@@ -162,44 +233,106 @@ export default function InventoryPage() {
       {showSync && (
         <div className="ai-glow relative overflow-hidden rounded-[2.5rem] border border-accent-soft bg-white p-8 shadow-2xl shadow-accent/15/50 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent-soft/50 blur-3xl" />
-          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex-1 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-soft text-accent">
-                  <TableIcon className="h-5 w-5" />
+          <div className="relative flex flex-col gap-8">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex-1 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+                    <TableIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Google Sheets (OAuth)</h3>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      Kết nối Google → nhập Spreadsheet ID hoặc link → chọn tab
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Kết nối Google Sheets</h3>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sử dụng ID trang tính để nhập dữ liệu hàng loạt</p>
-                </div>
+                {googleStatus && !googleStatus.oauth_configured && (
+                  <p className="text-sm font-medium text-amber-700">
+                    Backend chưa cấu hình Google OAuth — cần GOOGLE_OAUTH_* trong biến môi trường.
+                  </p>
+                )}
+                {googleStatus && googleStatus.oauth_configured && !googleStatus.connected && (
+                  <button
+                    type="button"
+                    onClick={connectGoogle}
+                    className="flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-8 py-4 text-sm font-black text-white shadow-xl transition hover:bg-black active:scale-95 lg:w-auto"
+                  >
+                    <Sparkles className="h-5 w-5 text-accent" />
+                    KẾT NỐI GOOGLE
+                  </button>
+                )}
+                {googleStatus?.connected && (
+                  <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                      <button
+                        type="button"
+                        onClick={openPicker}
+                        className="flex items-center gap-3 rounded-2xl border-2 border-slate-100 bg-white px-6 py-4 text-sm font-black text-slate-700 transition-all hover:bg-slate-50 hover:border-accent active:scale-95"
+                      >
+                        <TableIcon className="h-5 w-5 text-accent" />
+                        {sheetIdNormalized ? "THAY ĐỔI TRANG TÍNH" : "CHỌN TRANG TÍNH TỪ DRIVE"}
+                      </button>
+                      
+                      {sheetIdNormalized && (
+                        <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-2 text-[10px] font-black text-emerald-600 ring-1 ring-emerald-200">
+                          <CheckCircle2 className="h-3 w-3" />
+                          FILE ID: {sheetIdNormalized.slice(0, 8)}...
+                        </div>
+                      )}
+                    </div>
+
+                    {tabData?.titles?.length ? (
+                      <div className="space-y-3">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">
+                          Chọn Tab (Worksheet)
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {tabData.titles.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setSheetName(t)}
+                              className={`rounded-xl px-4 py-2 text-xs font-black transition-all ${
+                                sheetName === t
+                                  ? "bg-accent text-white shadow-lg shadow-accent/20"
+                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                              }`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : sheetIdNormalized ? (
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+                        Đang đọc các tab...
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={sheetId}
-                  onChange={(e) => setSheetId(e.target.value)}
-                  placeholder="Nhập Google Spreadsheet ID (ví dụ: 1BxiMVs0XRA5...)"
-                  className="w-full rounded-2xl border-none bg-slate-50 py-4 pl-6 pr-4 text-sm font-semibold shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
-                />
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
-                  ID: {sheetId.slice(0, 10)}...
-                </div>
+              <div className="flex flex-col gap-4">
+                <button
+                  type="button"
+                  onClick={() => importSheetsMutation.mutate()}
+                  disabled={
+                    !googleStatus?.connected ||
+                    !sheetIdNormalized ||
+                    sheetIdNormalized.length < 20 ||
+                    importSheetsMutation.isPending
+                  }
+                  className="flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-10 py-4 text-sm font-black text-white shadow-xl transition-all hover:bg-black hover:-translate-y-1 active:scale-95 disabled:opacity-50"
+                >
+                  {importSheetsMutation.isPending ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
+                  ) : (
+                    <RefreshCw className="h-5 w-5" />
+                  )}
+                  BẮT ĐẦU ĐỒNG BỘ
+                </button>
               </div>
-            </div>
-            <div className="flex flex-col gap-4">
-              <button 
-                onClick={() => syncMutation.mutate()} 
-                disabled={!sheetId || syncMutation.isPending} 
-                className="flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-10 py-4 text-sm font-black text-white shadow-xl transition-all hover:bg-black hover:-translate-y-1 active:scale-95 disabled:opacity-50"
-              >
-                {syncMutation.isPending ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
-                ) : <RefreshCw className="h-5 w-5" />}
-                BẮT ĐẦU ĐỒNG BỘ
-              </button>
-              <a href="#" className="flex items-center justify-center gap-2 text-xs font-bold text-accent hover:underline">
-                Hướng dẫn định dạng tệp <ExternalLink className="h-3 w-3" />
-              </a>
             </div>
           </div>
         </div>

@@ -48,8 +48,14 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
-    # Google Sheets
-    GOOGLE_SHEETS_CREDENTIALS: str = ""
+    # Google Sheets / Drive — OAuth 2.0 (Web client). Callback URL = GOOGLE_OAUTH_REDIRECT_URI
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://127.0.0.1:8000/admin/auth/google/callback"
+    # Sau khi kết nối Google, chuyển về dashboard/onboarding (trình duyệt)
+    GOOGLE_OAUTH_SUCCESS_REDIRECT: str = "http://localhost:3000/dashboard/inventory?google=connected"
+    # API key (browser) cho Google Picker — giới hạn referrer HTTP trong Google Cloud Console
+    GOOGLE_PICKER_API_KEY: str = ""
 
     # JWT Auth (legacy / Facebook login)
     JWT_SECRET_KEY: str = "change-me-in-production"

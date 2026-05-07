@@ -7,6 +7,7 @@ from app.models.inventory import Product
 from app.models.campaign import Campaign, CampaignMessage
 from app.models.fraud_log import FraudLog
 from app.models.conversation import Conversation
+from app.models.import_job import ImportJob, ImportJobStatus
 
 __all__ = [
     "CustomerSegment",
@@ -21,4 +22,6 @@ __all__ = [
     "CampaignMessage",
     "FraudLog",
     "Conversation",
+    "ImportJob",
+    "ImportJobStatus",
 ]

@@ -1,5 +1,7 @@
-from pydantic import BaseModel
+import re
 import uuid
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProductCreate(BaseModel):
@@ -39,13 +41,48 @@ class ProductResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class SyncGoogleSheetsRequest(BaseModel):
+def _normalize_spreadsheet_id(v: object) -> str:
+    if not isinstance(v, str):
+        return str(v)
+    s = v.strip()
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", s)
+    if m:
+        return m.group(1)
+    return s
+
+
+class SheetImportRequest(BaseModel):
     spreadsheet_id: str
     sheet_name: str = "Sheet1"
+    entity: str = Field("products", description="products | customers")
+    header_row: int = Field(1, ge=1)
+    data_start_row: int = Field(2, ge=1)
+    range_a1: str | None = Field(None, description="VD: A1:Z999 — tùy chọn")
+
+    @field_validator("spreadsheet_id", mode="before")
+    @classmethod
+    def normalize_spreadsheet_id(cls, v: object) -> str:
+        return _normalize_spreadsheet_id(v)
 
 
-class SyncResult(BaseModel):
+class SheetImportSummary(BaseModel):
     total_rows: int
     created: int
     updated: int
     errors: list[str] = []
+
+
+class ImportJobCreateResponse(BaseModel):
+    job_id: uuid.UUID
+
+
+class ImportJobStatusResponse(BaseModel):
+    id: uuid.UUID
+    status: str
+    progress_percent: int
+    result: SheetImportSummary | None = None
+    error_message: str | None = None
+
+
+class SheetTabsResponse(BaseModel):
+    titles: list[str]

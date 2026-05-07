@@ -157,12 +157,70 @@ export const inventoryApi = {
     api.post("/admin/inventory/products", data),
   updateProduct: (id: string, data: Record<string, unknown>) =>
     api.patch(`/admin/inventory/products/${id}`, data),
-  syncSheets: (spreadsheetId: string, sheetName?: string) =>
-    api.post("/admin/inventory/sync", {
-      spreadsheet_id: spreadsheetId,
-      sheet_name: sheetName || "Sheet1",
-    }),
+  sheetTabs: (spreadsheetId: string) =>
+    api.get<{ titles: string[] }>(
+      `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/tabs`
+    ),
+  importSheets: (data: Record<string, unknown>) =>
+    api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
+  importJob: (jobId: string) =>
+    api.get<{
+      id: string;
+      status: string;
+      progress_percent: number;
+      result: {
+        total_rows: number;
+        created: number;
+        updated: number;
+        errors: string[];
+      } | null;
+      error_message: string | null;
+    }>(`/admin/inventory/import/jobs/${jobId}`),
 };
+
+export const googleAuthApi = {
+  loginUrl: (next?: string) =>
+    api.get<{ authorization_url: string }>("/admin/auth/google/login", {
+      params: next ? { next } : undefined,
+    }),
+  status: () =>
+    api.get<{ connected: boolean; oauth_configured: boolean }>(
+      "/admin/auth/google/status"
+    ),
+  pickerConfig: () =>
+    api.get<{
+      access_token: string;
+      client_id: string;
+      developer_key: string | null;
+    }>("/admin/auth/google/picker-config"),
+};
+
+export async function pollImportJob(
+  jobId: string,
+  options?: { intervalMs?: number; maxAttempts?: number }
+): Promise<{
+  id: string;
+  status: string;
+  progress_percent: number;
+  result: {
+    total_rows: number;
+    created: number;
+    updated: number;
+    errors: string[];
+  } | null;
+  error_message: string | null;
+}> {
+  const intervalMs = options?.intervalMs ?? 600;
+  const maxAttempts = options?.maxAttempts ?? 180;
+  for (let i = 0; i < maxAttempts; i++) {
+    const { data } = await inventoryApi.importJob(jobId);
+    if (data.status === "completed" || data.status === "failed") {
+      return data;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error("Import timeout — thử lại sau.");
+}
 
 export const campaignApi = {
   getSegments: () => api.get("/admin/campaigns/segments"),

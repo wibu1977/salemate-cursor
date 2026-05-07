@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Script from "next/script";
-import { pagesApi, authApi, inventoryApi } from "@/lib/api";
-import { isAxiosError } from "axios";
+import { pagesApi, authApi, inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
+import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
 import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
 
 // ── Facebook SDK types (type alias avoids global Window conflict) ───────────
@@ -39,6 +39,7 @@ const PROGRESS: Record<Step, number> = {
 // ── Component ──────────────────────────────────────────────────────────────
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [step, setStep] = useState<Step>("welcome");
   const [typing, setTyping] = useState(false);
@@ -46,8 +47,11 @@ export default function OnboardingPage() {
   const [connectedPage, setConnectedPage] = useState<string | null>(null);
   const [bank, setBank] = useState({ account: "", bankName: "", holder: "" });
   const [product, setProduct] = useState({ name: "", price: "" });
+  const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
+  const [availableTabs, setAvailableTabs] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const googleReturnHandled = useRef(false);
 
   // Auto-scroll
   useEffect(() => {
@@ -61,6 +65,20 @@ export default function OnboardingPage() {
       w.FB?.init({ appId: process.env.NEXT_PUBLIC_META_APP_ID, cookie: true, xfbml: true, version: "v21.0" });
     };
   }, []);
+
+  useEffect(() => {
+    if (googleReturnHandled.current) return;
+    if (searchParams?.get("google") !== "connected") return;
+    googleReturnHandled.current = true;
+    void (async () => {
+      await botMsg("Đã kết nối Google! Hãy chọn trang tính từ Google Drive của bạn để bắt đầu.", 400);
+      setStep("product-sheet");
+      setTimeout(() => inputRef.current?.focus(), 500);
+    })();
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [searchParams, botMsg]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const botMsg = useCallback((text: string, delay = 900, component?: React.ReactNode): Promise<void> =>
@@ -288,7 +306,7 @@ export default function OnboardingPage() {
         </button>
         <div className="flex items-center gap-2 py-1 px-2">
           <div className="h-px flex-1 bg-slate-100" />
-          <span className="text-[8px] font-black uppercase tracking-widest text-slate-300">Hoặc nhập tay bên dưới</span>
+          <span className="text-[8px] font-black uppercase tracking-widest text-slate-300">Hoặc tiếp tục thiết lập</span>
           <div className="h-px flex-1 bg-slate-100" />
         </div>
       </div>
@@ -296,50 +314,131 @@ export default function OnboardingPage() {
     setTimeout(() => inputRef.current?.focus(), 1400);
   };
 
-  const startSheetSync = async () => {
-    userMsg("Nhập từ Google Sheets 📊");
-    await botMsg("Lựa chọn thông minh! Việc này giúp quản lý hàng loạt sản phẩm cực kỳ nhanh chóng.", 800);
-    await botMsg("Hãy dán đường link Google Sheet (hoặc Spreadsheet ID) của bạn vào đây:", 1500);
-    setStep("product-sheet");
-    setTimeout(() => inputRef.current?.focus(), 1600);
+  const connectGoogle = async () => {
+    const nextUrl = `${window.location.origin}/onboarding`;
+    const { data } = await googleAuthApi.loginUrl(nextUrl);
+    window.location.href = data.authorization_url;
   };
 
-  const submitSheetId = async () => {
-    let id = input.trim();
-    if (!id) return;
-    
-    // Extract ID if it's a URL
-    const urlMatch = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (urlMatch && urlMatch[1]) {
-      id = urlMatch[1];
+  const onSheetSelected = async (id: string) => {
+    setSelectedSheetId(id);
+    await botMsg("Đang đọc các trang tính (tabs) trong file của bạn... 🔍", 600);
+    try {
+      const { data: tabs } = await inventoryApi.sheetTabs(id);
+      setAvailableTabs(tabs.titles);
+      if (tabs.titles.length === 0) {
+        await botMsg("⚠️ File này có vẻ không có trang tính nào hợp lệ.");
+        return;
+      }
+      if (tabs.titles.length === 1) {
+        await startImport(id, tabs.titles[0]);
+      } else {
+        await botMsg(
+          "Tuyệt! File này có nhiều trang tính. Bạn muốn nhập từ trang nào?",
+          800,
+          <div className="flex flex-wrap gap-2">
+            {tabs.titles.map((t) => (
+              <button
+                key={t}
+                onClick={() => startImport(id, t)}
+                className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        );
+      }
+    } catch (e: unknown) {
+      await botMsg(`❌ Lỗi khi đọc file: ${formatApiError(e)}`);
     }
-    
-    if (id.length < 20) {
-      await botMsg("⚠️ Đường link hoặc ID có vẻ không đúng. Bạn vui lòng kiểm tra lại nhé?");
-      return;
-    }
+  };
 
-    setInput("");
-    userMsg(`Đang đồng bộ từ trang tính...`);
+  const startImport = async (id: string, tabName: string) => {
+    userMsg(`Nhập từ trang tính: ${tabName}`);
     setTyping(true);
     try {
-      const res = await inventoryApi.syncSheets(id);
-      const d = res.data;
-      await botMsg(`🎉 Thành công rực rỡ! Đã thêm ${d.created} sản phẩm và cập nhật ${d.updated} sản phẩm từ Google Sheets.`, 1000);
-      setTimeout(() => finishOnboarding(), 1200);
-    } catch (err: unknown) {
-      let errorMsg = "Có lỗi khi kết nối Google Sheets.";
-      if (isAxiosError(err)) {
-        const data = err.response?.data;
-        if (data && typeof data === "object" && data !== null && "detail" in data) {
-          const d = (data as { detail: unknown }).detail;
-          errorMsg = typeof d === "string" ? d : String(d);
-        }
+      const { data: start } = await inventoryApi.importSheets({
+        spreadsheet_id: id,
+        sheet_name: tabName,
+        entity: "products",
+        header_row: 1,
+        data_start_row: 2,
+      });
+      const job = await pollImportJob(String(start.job_id));
+      if (job.status === "failed") {
+        await botMsg(`❌ ${job.error_message || "Import thất bại."}`, 600);
+        return;
       }
-      await botMsg(`❌ ${errorMsg}\n\nHãy đảm bảo bạn đã cấp quyền "Bất kỳ ai có liên kết đều có thể xem" (Anyone with link can view) cho trang tính nhé.`, 1000);
-      // Stay on the same step to allow retry
+      const d = job.result;
+      if (!d) {
+        await botMsg("❌ Không có kết quả import.", 600);
+        return;
+      }
+      const errHint =
+        d.errors?.length > 0
+          ? `\n\n${d.errors.slice(0, 5).join("\n")}${d.errors.length > 5 ? "\n…" : ""}`
+          : "";
+      await botMsg(
+        `🎉 Hoàn tất! Đã thêm ${d.created} sản phẩm, cập nhật ${d.updated}.${errHint}`,
+        900
+      );
+      setTimeout(() => void finishOnboarding(), 1200);
+    } catch (err: unknown) {
+      await botMsg(`❌ ${formatApiError(err)}\n\nĐảm bảo bạn có quyền xem trang tính này.`);
     } finally {
       setTyping(false);
+    }
+  };
+
+  const openPicker = async () => {
+    try {
+      const { data: cfg } = await googleAuthApi.pickerConfig();
+      if (!cfg.developer_key) {
+        await botMsg("⚠️ Tính năng chọn file (Google Picker) chưa được cấu hình API Key. Hãy liên hệ quản trị viên.", 600);
+        return;
+      }
+      const id = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key);
+      if (id) await onSheetSelected(id);
+    } catch (e: unknown) {
+      await botMsg(formatApiError(e), 600);
+    }
+  };
+
+  const startSheetSync = async () => {
+    userMsg("Nhập từ Google Sheets 📊");
+    await botMsg(
+      "Salemate sẽ đồng bộ sản phẩm từ Google Sheets của bạn. Rất nhanh và an toàn qua Google OAuth.",
+      700
+    );
+    try {
+      const { data: st } = await googleAuthApi.status();
+      if (!st.oauth_configured) {
+        await botMsg(
+          "⚠️ Hệ thống chưa được cấu hình Google OAuth. Vui lòng liên hệ quản trị viên.",
+          600
+        );
+        return;
+      }
+      if (!st.connected) {
+        await botMsg("Trước tiên, hãy kết nối tài khoản Google của bạn nhé:", 800, (
+          <button type="button" onClick={() => void connectGoogle()} className="btn-premium w-full flex items-center justify-center gap-2">
+            <Sparkles className="h-4 w-4" /> Kết nối Google
+          </button>
+        ));
+      } else {
+        await botMsg("Bạn đã kết nối Google! Hãy chọn file trang tính từ Google Drive của bạn:", 800, (
+          <button
+            type="button"
+            onClick={() => void openPicker()}
+            className="w-full rounded-2xl border-2 border-emerald-200 bg-white px-4 py-4 text-sm font-black text-emerald-800 shadow-lg shadow-emerald-500/10 hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
+          >
+            <TableIcon className="h-5 w-5" /> Chọn trang tính (Drive)
+          </button>
+        ));
+      }
+    } catch {
+      await botMsg("Không kiểm tra được trạng thái Google. Thử đăng nhập lại.", 600);
     }
   };
 
@@ -437,7 +536,6 @@ export default function OnboardingPage() {
       case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"));
       case "product-name":  return inputField("Hoặc nhập tên sản phẩm...", () => submitProduct("name"));
       case "product-price": return inputField("50000", () => submitProduct("price"), "number");
-      case "product-sheet": return inputField("Dán link Google Sheet tại đây...", () => submitSheetId());
       case "product-desc":
         return (
           <div className="flex flex-col gap-3">

@@ -29,6 +29,10 @@ class Workspace(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     pages: Mapped[list["ShopPage"]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
     products: Mapped[list] = relationship("Product", back_populates="workspace", cascade="all, delete-orphan")
     orders: Mapped[list] = relationship("Order", back_populates="workspace", cascade="all, delete-orphan")

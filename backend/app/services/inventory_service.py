@@ -1,10 +1,14 @@
+import logging
 import uuid
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.inventory import Product
-from app.schemas.inventory import ProductCreate, ProductUpdate, SyncGoogleSheetsRequest, SyncResult
+from app.schemas.inventory import ProductCreate, ProductUpdate
 from app.services.notification_service import NotificationService
+
+logger = logging.getLogger("salemate.inventory")
 
 
 class InventoryService:
@@ -60,67 +64,6 @@ class InventoryService:
         await db.commit()
         await db.refresh(product)
         return product
-
-    @staticmethod
-    async def sync_from_sheets(
-        db: AsyncSession, workspace_id: uuid.UUID, payload: SyncGoogleSheetsRequest
-    ) -> SyncResult:
-        """Sync products from Google Sheets."""
-        from app.utils.sheets_sync import read_google_sheet
-
-        rows = await read_google_sheet(payload.spreadsheet_id, payload.sheet_name)
-
-        created, updated, errors = 0, 0, []
-
-        for i, row in enumerate(rows):
-            try:
-                name = row.get("name") or row.get("tên sản phẩm") or row.get("product")
-                if not name:
-                    continue
-
-                price = int(row.get("price") or row.get("giá") or 0)
-                quantity = int(row.get("quantity") or row.get("số lượng") or 0)
-                threshold = int(row.get("threshold") or row.get("ngưỡng") or 5)
-
-                stmt = select(Product).where(
-                    Product.workspace_id == workspace_id,
-                    Product.name == name,
-                )
-                result = await db.execute(stmt)
-                existing = result.scalar_one_or_none()
-
-                if existing:
-                    existing.price = price
-                    existing.quantity = quantity
-                    existing.stock_threshold = threshold
-                    updated += 1
-
-                    if existing.quantity <= existing.stock_threshold:
-                        await NotificationService.notify_low_stock(
-                            workspace_id, existing.name, existing.quantity, existing.stock_threshold
-                        )
-                else:
-                    product = Product(
-                        workspace_id=workspace_id,
-                        name=name,
-                        description=row.get("description") or row.get("mô tả") or "",
-                        price=price,
-                        quantity=quantity,
-                        stock_threshold=threshold,
-                    )
-                    db.add(product)
-                    created += 1
-
-            except Exception as e:
-                errors.append(f"Row {i + 2}: {str(e)}")
-
-        await db.commit()
-
-        # Trigger async embedding for new/updated products
-        from app.workers.embeddings import embed_workspace_products
-        embed_workspace_products.delay(str(workspace_id))
-
-        return SyncResult(total_rows=len(rows), created=created, updated=updated, errors=errors)
 
     @staticmethod
     async def _update_embedding(db: AsyncSession, product: Product):
