@@ -141,37 +141,41 @@ export default function OnboardingPage() {
       return; 
     }
     
-    fb.login(async (rawRes) => {
-      console.log("FB Login response:", rawRes);
-      const res = rawRes as { status: string; authResponse?: { accessToken: string } };
-      if (res.status !== "connected" || !res.authResponse?.accessToken) {
-        botMsg("⚠️ Bạn chưa hoàn tất kết nối. Hãy thử lại khi bạn sẵn sàng nhé.");
-        return;
-      }
-      
-      await botMsg("Đang lấy danh sách Fanpage của bạn... 🔄", 600);
-      fb.api("/me/accounts", async (data) => {
-        if (!data?.data?.[0]) {
-          await botMsg("❌ Không tìm thấy Fanpage nào. Hãy đảm bảo bạn đã tạo Fanpage và cấp quyền cho Salemate.");
+    fb.login((rawRes) => {
+      (async () => {
+        console.log("FB Login response:", rawRes);
+        const res = rawRes as { status: string; authResponse?: { accessToken: string } };
+        if (res.status !== "connected" || !res.authResponse?.accessToken) {
+          botMsg("⚠️ Bạn chưa hoàn tất kết nối. Hãy thử lại khi bạn sẵn sàng nhé.");
           return;
         }
-        const page = data.data[0];
-        try {
-          await pagesApi.connectPage({ 
-            platform, 
-            page_id: page.id, 
-            page_name: page.name, 
-            page_access_token: page.access_token 
-          });
-          setConnectedPage(page.name);
-          userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
-          await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
-          await goPayment();
-        } catch (err) {
-          console.error("Connect page error:", err);
-          await botMsg("❌ Có lỗi xảy ra khi kết nối với hệ thống. Bạn có thể thử lại hoặc bỏ qua bước này.");
-        }
-      });
+        
+        await botMsg("Đang lấy danh sách Fanpage của bạn... 🔄", 600);
+        fb.api("/me/accounts", (data) => {
+          (async () => {
+            if (!data?.data?.[0]) {
+              await botMsg("❌ Không tìm thấy Fanpage nào. Hãy đảm bảo bạn đã tạo Fanpage và cấp quyền cho Salemate.");
+              return;
+            }
+            const page = data.data[0];
+            try {
+              await pagesApi.connectPage({ 
+                platform, 
+                page_id: page.id, 
+                page_name: page.name, 
+                page_access_token: (page as any).access_token 
+              });
+              setConnectedPage(page.name);
+              userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
+              await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
+              await goPayment();
+            } catch (err) {
+              console.error("Connect page error:", err);
+              await botMsg("❌ Có lỗi xảy ra khi kết nối với hệ thống. Bạn có thể thử lại hoặc bỏ qua bước này.");
+            }
+          })();
+        });
+      })();
     }, { scope: "pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata,instagram_basic,instagram_manage_messages" });
   };
 
