@@ -163,7 +163,7 @@ export default function OnboardingPage() {
                 platform, 
                 page_id: page.id, 
                 page_name: page.name, 
-                page_access_token: (page as any).access_token 
+                page_access_token: page.access_token 
               });
               setConnectedPage(page.name);
               userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
