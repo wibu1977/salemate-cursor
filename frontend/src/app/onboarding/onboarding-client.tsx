@@ -1,5 +1,7 @@
 "use client";
 
+import { FacebookSDK } from "@/components/facebook-sdk";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Script from "next/script";
@@ -70,13 +72,7 @@ export default function OnboardingClient() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, typing]);
 
-  // FB SDK init
-  useEffect(() => {
-    const w = window as SdkWindow;
-    w.fbAsyncInit = function () {
-      w.FB?.init({ appId: process.env.NEXT_PUBLIC_META_APP_ID, cookie: true, xfbml: true, version: "v21.0" });
-    };
-  }, []);
+  // FB SDK init is now handled by <FacebookSDK /> component
 
   useEffect(() => {
     if (googleReturnHandled.current) return;
@@ -186,9 +182,10 @@ export default function OnboardingClient() {
               userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
               await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
               await goPayment();
-            } catch (err) {
+            } catch (err: any) {
               console.error("Connect page error:", err);
-              await botMsg("❌ Có lỗi xảy ra khi kết nối với hệ thống. Bạn có thể thử lại hoặc bỏ qua bước này.");
+              const errorMsg = err.response?.data?.detail || err.message || "Không xác định";
+              await botMsg(`❌ Lỗi kết nối: ${errorMsg}. Vui lòng thử lại hoặc liên hệ hỗ trợ.`);
             }
           })();
         });
@@ -550,7 +547,7 @@ export default function OnboardingClient() {
   // ── JSX ──────────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 font-sans">
-      <Script src="https://connect.facebook.net/vi_VN/sdk.js" strategy="lazyOnload" />
+      <FacebookSDK />
 
       {/* Header */}
       <header className="fixed inset-x-0 top-0 z-30 flex h-16 items-center gap-4 border-b border-black/[0.06] bg-white/80 px-6 backdrop-blur-xl">
