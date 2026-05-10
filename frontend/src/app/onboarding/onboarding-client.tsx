@@ -4,7 +4,6 @@ import { FacebookSDK } from "@/components/facebook-sdk";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Script from "next/script";
 import { pagesApi, authApi, inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
 import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
 import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
@@ -182,9 +181,9 @@ export default function OnboardingClient() {
               userMsg(`Đã kết nối ${platform === "facebook" ? "Facebook" : "Instagram"}: ${page.name}`);
               await botMsg(`🎉 Đã kết nối ${page.name} thành công! Salemate AI sẽ trực chiến 24/7 cho bạn.`);
               await goPayment();
-            } catch (err: any) {
+            } catch (err: unknown) {
               console.error("Connect page error:", err);
-              const errorMsg = err.response?.data?.detail || err.message || "Không xác định";
+              const errorMsg = formatApiError(err);
               await botMsg(`❌ Lỗi kết nối: ${errorMsg}. Vui lòng thử lại hoặc liên hệ hỗ trợ.`);
             }
           })();

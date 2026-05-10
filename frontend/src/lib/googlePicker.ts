@@ -114,14 +114,16 @@ export async function pickGoogleSpreadsheet(
               picker.setVisible(true);
             } catch (err) {
               console.error("[GooglePicker] Error building picker:", err);
-              reject(err);
+              reject(new Error("Lỗi khi khởi tạo giao diện chọn file."));
             }
-          } else if (retries < 20) { // Tăng số lần thử lại lên 20 (tương đương 2 giây)
+          } else if (retries < 50) { // Thử lại trong tối đa 5 giây
             retries++;
-            console.warn(`[GooglePicker] google.picker not found, retrying... (${retries}/20)`);
+            if (retries % 10 === 0) {
+              console.warn(`[GooglePicker] google.picker not found, retrying... (${retries}/50)`);
+            }
             setTimeout(checkPicker, 100);
           } else {
-            reject(new Error("Google Picker không thể khởi tạo (missing google.picker)."));
+            reject(new Error("Không thể khởi tạo Google Picker (google.picker is missing). Vui lòng thử lại hoặc tải lại trang."));
           }
         };
 
