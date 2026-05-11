@@ -162,7 +162,7 @@ export const inventoryApi = {
       `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/tabs`
     ),
   sheetPreview: (spreadsheetId: string, sheetName: string, limit: number = 10) =>
-    api.get<{ rows: any[][] }>(
+    api.get<{ rows: unknown[][] }>(
       `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/preview`,
       { params: { sheet_name: sheetName, limit } }
     ),

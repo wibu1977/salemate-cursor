@@ -101,7 +101,7 @@ export default function InventoryPage() {
 
   const previewHeaders = useMemo(() => {
     if (!previewData?.rows?.length) return [];
-    return previewData.rows[0].map((h: any) => String(h || ""));
+    return previewData.rows[0].map((h: unknown) => String(h ?? ""));
   }, [previewData]);
 
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function InventoryPage() {
         setColumnMapping(mapping);
       }
     }
-  }, [previewHeaders, sheetName]);
+  }, [previewHeaders, sheetName, columnMapping]);
 
   const connectGoogle = () => {
     const next =
@@ -493,7 +493,7 @@ export default function InventoryPage() {
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-50">
-                                        {previewData.rows.slice(1, 6).map((row: any[], i: number) => (
+                                        {previewData.rows.slice(1, 6).map((row: unknown[], i: number) => (
                                           <tr key={i} className="hover:bg-slate-50/30 transition-colors">
                                             {row.map((cell, j) => {
                                               const isMapped = Object.values(columnMapping).includes(previewHeaders[j]);
