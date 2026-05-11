@@ -37,7 +37,7 @@ function isHopByHopHeader(name: string): boolean {
 
 async function proxy(req: NextRequest, pathSegments: string[] | undefined) {
   const segments = pathSegments ?? [];
-  const path = segments.join("/");
+  const path = segments.map(encodeURIComponent).join("/");
   const backend = backendBase();
   const url = new URL(req.url);
   const target = `${backend}/${path}${url.search}`;

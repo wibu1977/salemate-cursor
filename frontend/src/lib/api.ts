@@ -159,12 +159,13 @@ export const inventoryApi = {
     api.patch(`/admin/inventory/products/${id}`, data),
   sheetTabs: (spreadsheetId: string) =>
     api.get<{ titles: string[] }>(
-      `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/tabs`
+      `/admin/inventory/google/spreadsheets/tabs`,
+      { params: { spreadsheet_id: spreadsheetId } }
     ),
   sheetPreview: (spreadsheetId: string, sheetName: string, limit: number = 10) =>
     api.get<{ rows: unknown[][] }>(
-      `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/preview`,
-      { params: { sheet_name: sheetName, limit } }
+      `/admin/inventory/google/spreadsheets/preview`,
+      { params: { spreadsheet_id: spreadsheetId, sheet_name: sheetName, limit } }
     ),
   importSheets: (data: Record<string, unknown>) =>
     api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
