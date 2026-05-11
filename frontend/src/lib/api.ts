@@ -161,6 +161,11 @@ export const inventoryApi = {
     api.get<{ titles: string[] }>(
       `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/tabs`
     ),
+  sheetPreview: (spreadsheetId: string, sheetName: string, limit: number = 10) =>
+    api.get<{ rows: any[][] }>(
+      `/admin/inventory/google/spreadsheets/${encodeURIComponent(spreadsheetId)}/preview`,
+      { params: { sheet_name: sheetName, limit } }
+    ),
   importSheets: (data: Record<string, unknown>) =>
     api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
   importJob: (jobId: string) =>

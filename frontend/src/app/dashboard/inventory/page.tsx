@@ -54,6 +54,8 @@ export default function InventoryPage() {
   const [showSync, setShowSync] = useState(false);
   const [sheetId, setSheetId] = useState("");
   const [sheetName, setSheetName] = useState("Sheet1");
+  const [importStep, setImportStep] = useState(0); // 0: Select, 1: Map, 2: Progress
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -90,12 +92,54 @@ export default function InventoryPage() {
       !!googleStatus?.connected &&
       sheetIdNormalized.length >= 20,
   });
+  
+  const { data: previewData, isLoading: isLoadingPreview } = useQuery({
+    queryKey: ["sheet-preview", sheetIdNormalized, sheetName],
+    queryFn: () => inventoryApi.sheetPreview(sheetIdNormalized, sheetName).then((r) => r.data),
+    enabled: !!googleStatus?.connected && !!sheetIdNormalized && !!sheetName && importStep === 1,
+  });
+
+  const previewHeaders = useMemo(() => {
+    if (!previewData?.rows?.length) return [];
+    return previewData.rows[0].map((h: any) => String(h || ""));
+  }, [previewData]);
 
   useEffect(() => {
     if (tabData?.titles?.length && !tabData.titles.includes(sheetName)) {
       setSheetName(tabData.titles[0]);
     }
   }, [tabData, sheetName]);
+
+  // Auto-guess mapping when headers load or sheet changes
+  useEffect(() => {
+    if (previewHeaders.length > 0) {
+      const mapping: Record<string, string> = { ...columnMapping };
+      const fields = [
+        { key: "name", patterns: [/name/i, /tên/i, /product/i, /sản phẩm/i, /hàng/i] },
+        { key: "price", patterns: [/price/i, /giá/i, /cost/i, /bán/i] },
+        { key: "quantity", patterns: [/qty/i, /số lượng/i, /quantity/i, /stock/i, /tồn/i] },
+        { key: "stock_threshold", patterns: [/threshold/i, /ngưỡng/i, /cảnh báo/i] },
+        { key: "description", patterns: [/desc/i, /mô tả/i, /chi tiết/i, /note/i] },
+        { key: "image_url", patterns: [/image/i, /ảnh/i, /hình/i, /url/i, /link/i, /pic/i] },
+      ];
+
+      let changed = false;
+      fields.forEach(f => {
+        // Only auto-map if not already mapped or if it's currently empty
+        if (!mapping[f.key]) {
+          const found = previewHeaders.find(h => f.patterns.some(p => p.test(h)));
+          if (found) {
+            mapping[f.key] = found;
+            changed = true;
+          }
+        }
+      });
+
+      if (changed) {
+        setColumnMapping(mapping);
+      }
+    }
+  }, [previewHeaders, sheetName]);
 
   const connectGoogle = () => {
     const next =
@@ -162,6 +206,7 @@ export default function InventoryPage() {
         entity: "products",
         header_row: 1,
         data_start_row: 2,
+        column_mapping: columnMapping,
       });
       return pollImportJob(String(start.job_id));
     },
@@ -180,6 +225,8 @@ export default function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowSync(false);
       setSheetId("");
+      setImportStep(0);
+      setColumnMapping({});
     },
     onError: (e: unknown) => toast(formatApiError(e), "error"),
   });
@@ -282,26 +329,40 @@ export default function InventoryPage() {
                     </div>
 
                     {tabData?.titles?.length ? (
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">
-                          Chọn Tab (Worksheet)
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {tabData.titles.map((t) => (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => setSheetName(t)}
-                              className={`rounded-xl px-4 py-2 text-xs font-black transition-all ${
-                                sheetName === t
-                                  ? "bg-accent text-white shadow-lg shadow-accent/20"
-                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                              }`}
-                            >
-                              {t}
-                            </button>
-                          ))}
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">
+                            Chọn Tab (Worksheet)
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {tabData.titles.map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => {
+                                  setSheetName(t);
+                                  setImportStep(0);
+                                }}
+                                className={`rounded-xl px-4 py-2 text-xs font-black transition-all ${
+                                  sheetName === t
+                                    ? "bg-accent text-white shadow-lg shadow-accent/20"
+                                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                  }`}
+                              >
+                                {t}
+                              </button>
+                            ))}
+                          </div>
                         </div>
+
+                        {importStep === 0 && (
+                          <button
+                            onClick={() => setImportStep(1)}
+                            className="btn-premium w-full lg:w-auto"
+                          >
+                            TIẾP THEO: ÁNH XẠ CỘT
+                          </button>
+                        )}
                       </div>
                     ) : sheetIdNormalized ? (
                       <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
@@ -309,28 +370,169 @@ export default function InventoryPage() {
                         Đang đọc các tab...
                       </div>
                     ) : null}
+
+                    {importStep === 1 && (
+                      <div className="space-y-8 rounded-[2.5rem] bg-slate-50/50 p-8 ring-1 ring-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-accent" />
+                              Ánh xạ cột dữ liệu
+                            </h4>
+                            <p className="text-[10px] font-bold text-slate-400">Chọn cột tương ứng từ file của bạn</p>
+                          </div>
+                          <button 
+                            onClick={() => setImportStep(0)} 
+                            className="group flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[10px] font-black text-slate-500 shadow-sm ring-1 ring-slate-100 transition-all hover:bg-slate-50 hover:text-accent"
+                          >
+                            QUAY LẠI
+                          </button>
+                        </div>
+                        
+                        {isLoadingPreview ? (
+                          <div className="flex flex-col items-center justify-center py-20 gap-4">
+                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent-soft border-t-accent" />
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Đang phân tích dữ liệu...</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-8">
+                          <div className="space-y-10">
+                            <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                              {[
+                                { key: "name", label: "Tên sản phẩm", required: true, icon: <Box className="h-4 w-4" />, description: "Dùng để nhận diện và cập nhật sản phẩm" },
+                                { key: "price", label: "Giá bán", icon: <DollarSign className="h-4 w-4" />, description: "Đơn vị: VNĐ" },
+                                { key: "quantity", label: "Số lượng", icon: <Layers className="h-4 w-4" />, description: "Số lượng tồn kho hiện tại" },
+                                { key: "stock_threshold", label: "Ngưỡng cảnh báo", icon: <AlertCircle className="h-4 w-4" />, description: "Báo động khi tồn dưới mức này" },
+                                { key: "description", label: "Mô tả", icon: <ImageIcon className="h-4 w-4" />, description: "Thông tin chi tiết sản phẩm" },
+                                { key: "image_url", label: "Ảnh (URL)", icon: <ImageIcon className="h-4 w-4" />, description: "Đường dẫn hình ảnh công khai" },
+                              ].map((field) => {
+                                const mappedCol = columnMapping[field.key];
+                                const colIndex = previewHeaders.indexOf(mappedCol);
+                                const sampleValue = colIndex !== -1 && previewData?.rows?.[1]?.[colIndex];
+
+                                return (
+                                  <div key={field.key} className="group relative space-y-3 rounded-3xl bg-white p-5 ring-1 ring-slate-100 transition-all hover:ring-accent/30 hover:shadow-xl hover:shadow-accent/5">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-accent-soft group-hover:text-accent transition-colors">
+                                          {field.icon}
+                                        </div>
+                                        <div>
+                                          <label className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+                                            {field.label} {field.required && <span className="text-rose-500">*</span>}
+                                          </label>
+                                          <p className="text-[9px] font-bold text-slate-400">{field.description}</p>
+                                        </div>
+                                      </div>
+                                      {mappedCol && (
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <select
+                                        value={mappedCol || ""}
+                                        onChange={(e) => setColumnMapping({ ...columnMapping, [field.key]: e.target.value })}
+                                        className="w-full rounded-xl border-none bg-slate-50 px-4 py-3 text-xs font-bold shadow-inner transition-all focus:ring-2 focus:ring-accent outline-none appearance-none hover:bg-slate-100 cursor-pointer"
+                                        style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', backgroundSize: '0.8rem' }}
+                                      >
+                                        <option value="">-- Bỏ qua trường này --</option>
+                                        {previewHeaders.map((h, i) => (
+                                          <option key={i} value={h}>{h}</option>
+                                        ))}
+                                      </select>
+                                      
+                                      {mappedCol && sampleValue !== undefined && (
+                                        <div className="flex items-center gap-2 px-1">
+                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Giá trị mẫu:</span>
+                                          <span className="text-[9px] font-bold text-accent truncate max-w-[150px]">
+                                            {String(sampleValue || "(Trống)")}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Control Actions */}
+                            <div className="flex justify-center">
+                              <button 
+                                onClick={() => setColumnMapping({})}
+                                className="flex items-center gap-2 text-[10px] font-black text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Xóa tất cả ánh xạ
+                              </button>
+                            </div>
+
+                            {/* Data Preview Table */}
+                            {previewData?.rows && previewData.rows.length > 1 && (
+                              <div className="space-y-4">
+                                <div className="flex items-center justify-between px-1">
+                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dữ liệu nguồn thực tế</h5>
+                                  <span className="text-[9px] font-bold text-slate-300">Đang hiển thị 5 dòng đầu</span>
+                                </div>
+                                <div className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm ring-1 ring-slate-200/50">
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-[10px] font-bold">
+                                      <thead>
+                                        <tr className="border-b border-slate-50 bg-slate-50/50">
+                                          {previewHeaders.map((h, i) => {
+                                            const isMapped = Object.values(columnMapping).includes(h);
+                                            return (
+                                              <th key={i} className={`whitespace-nowrap px-6 py-4 transition-colors ${isMapped ? 'bg-accent/5 text-accent' : 'text-slate-400'}`}>
+                                                <div className="flex items-center gap-2">
+                                                  {isMapped && <CheckCircle2 className="h-3 w-3" />}
+                                                  {h}
+                                                </div>
+                                              </th>
+                                            );
+                                          })}
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-50">
+                                        {previewData.rows.slice(1, 6).map((row: any[], i: number) => (
+                                          <tr key={i} className="hover:bg-slate-50/30 transition-colors">
+                                            {row.map((cell, j) => {
+                                              const isMapped = Object.values(columnMapping).includes(previewHeaders[j]);
+                                              return (
+                                                <td key={j} className={`whitespace-nowrap px-6 py-4 transition-colors ${isMapped ? 'bg-accent/[0.02] text-slate-900' : 'text-slate-500 font-medium'}`}>
+                                                  {String(cell || "")}
+                                                </td>
+                                              );
+                                            })}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          </div>
+                        )}
+
+                        <div className="pt-4">
+                          <button
+                            onClick={() => importSheetsMutation.mutate()}
+                            disabled={importSheetsMutation.isPending || !columnMapping.name && !previewHeaders.some(h => /name|tên|product/i.test(h))}
+                            className="ai-glow w-full rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
+                          >
+                            {importSheetsMutation.isPending ? (
+                              <div className="flex items-center justify-center gap-3">
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                ĐANG ĐỒNG BỘ...
+                              </div>
+                            ) : "BẮT ĐẦU NHẬP DỮ LIỆU"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-              <div className="flex flex-col gap-4">
-                <button
-                  type="button"
-                  onClick={() => importSheetsMutation.mutate()}
-                  disabled={
-                    !googleStatus?.connected ||
-                    !sheetIdNormalized ||
-                    sheetIdNormalized.length < 20 ||
-                    importSheetsMutation.isPending
-                  }
-                  className="flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-10 py-4 text-sm font-black text-white shadow-xl transition-all hover:bg-black hover:-translate-y-1 active:scale-95 disabled:opacity-50"
-                >
-                  {importSheetsMutation.isPending ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-3 border-white border-t-transparent" />
-                  ) : (
-                    <RefreshCw className="h-5 w-5" />
-                  )}
-                  BẮT ĐẦU ĐỒNG BỘ
-                </button>
               </div>
             </div>
           </div>
