@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_VERIFY_TOKEN: str = "salemate_verify_token"
-    # Meta Graph API — luôn dạng có phiên bản trong path, vd. v19.0/me?access_token=...
-    META_GRAPH_API_VERSION: str = "v19.0"
+    # Meta Graph API — luôn dạng có phiên bản trong path, vd. v21.0/me?access_token=...
+    META_GRAPH_API_VERSION: str = "v21.0"
     SALEMATE_PAGE_ID: str = ""
     SALEMATE_PAGE_ACCESS_TOKEN: str = ""
 
@@ -141,9 +141,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def normalize_meta_graph_api_version(self) -> "Settings":
-        v = (self.META_GRAPH_API_VERSION or "v19.0").strip()
+        v = (self.META_GRAPH_API_VERSION or "v21.0").strip()
         if not v:
-            v = "v19.0"
+            v = "v21.0"
         if not v.startswith("v"):
             v = f"v{v}"
         object.__setattr__(self, "META_GRAPH_API_VERSION", v)

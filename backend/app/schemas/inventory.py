@@ -1,6 +1,7 @@
 import re
 import uuid
 
+from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -58,6 +59,7 @@ class SheetImportRequest(BaseModel):
     header_row: int = Field(1, ge=1)
     data_start_row: int = Field(2, ge=1)
     range_a1: str | None = Field(None, description="VD: A1:Z999 — tùy chọn")
+    column_mapping: dict[str, str] | None = Field(None, description="Ánh xạ trường Salemate -> Tên cột trong sheet")
 
     @field_validator("spreadsheet_id", mode="before")
     @classmethod
@@ -86,3 +88,7 @@ class ImportJobStatusResponse(BaseModel):
 
 class SheetTabsResponse(BaseModel):
     titles: list[str]
+
+
+class SheetPreviewResponse(BaseModel):
+    rows: list[list[Any]]

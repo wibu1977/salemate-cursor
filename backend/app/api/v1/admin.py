@@ -5,12 +5,14 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_workspace_id, _decode_supabase_payload, security
 from app.config import get_settings
 from app.database import get_db
+from app.models.workspace import Workspace
 from app.schemas.admin import DashboardSummary, OrderListItem, OrderDetail, OrderActionRequest
 from app.schemas.auth import AuthMeResponse, FacebookLoginRequest, ReconnectPagesRequest, TokenResponse, WorkspaceSetup
 from app.services.admin_service import AdminService

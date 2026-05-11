@@ -17,10 +17,11 @@ from app.schemas.inventory import (
     ImportJobStatusResponse,
     SheetImportSummary,
     SheetTabsResponse,
+    SheetPreviewResponse,
 )
 from app.services.import_job_runner import run_sheets_import_job
 from app.services.inventory_service import InventoryService
-from app.services.sheets_import_service import list_sheet_titles
+from app.services.sheets_import_service import list_sheet_titles, fetch_sheet_preview
 
 router = APIRouter()
 
@@ -70,6 +71,26 @@ async def spreadsheet_tabs(
     return SheetTabsResponse(titles=titles)
 
 
+@router.get("/google/spreadsheets/{spreadsheet_id}/preview", response_model=SheetPreviewResponse)
+async def spreadsheet_preview(
+    spreadsheet_id: str,
+    sheet_name: str,
+    limit: int = 10,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    result = await db.execute(stmt)
+    ws = result.scalar_one_or_none()
+    if not ws or not (ws.google_refresh_token or "").strip():
+        raise HTTPException(status_code=400, detail="Chưa kết nối Google.")
+    try:
+        rows = await fetch_sheet_preview(db, ws, spreadsheet_id, sheet_name, limit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return SheetPreviewResponse(rows=rows)
+
+
 @router.post("/import/sheets", response_model=ImportJobCreateResponse)
 async def enqueue_sheet_import(
     payload: SheetImportRequest,
@@ -103,6 +124,7 @@ async def enqueue_sheet_import(
         payload.header_row,
         payload.data_start_row,
         payload.range_a1,
+        payload.column_mapping,
     )
     return ImportJobCreateResponse(job_id=job.id)
 

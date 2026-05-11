@@ -24,6 +24,7 @@ async def run_sheets_import_job(
     header_row: int,
     data_start_row: int,
     range_a1: str | None,
+    column_mapping: dict[str, str] | None = None,
 ) -> None:
     async with async_session() as session:
         job = await session.get(ImportJob, job_id)
@@ -54,6 +55,7 @@ async def run_sheets_import_job(
                 header_row_1based=header_row,
                 data_start_row_1based=data_start_row,
                 range_a1=range_a1,
+                column_mapping=column_mapping,
             )
             job_row = await session.get(ImportJob, job_id)
             if not job_row:

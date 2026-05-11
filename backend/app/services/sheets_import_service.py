@@ -37,6 +37,7 @@ PRICE_KEYS = ("price", "giá", "gia", "gia ban")
 QTY_KEYS = ("quantity", "số lượng", "so luong", "stock", "ton", "tồn")
 THRESHOLD_KEYS = ("threshold", "ngưỡng", "nguong", "stock_threshold")
 DESC_KEYS = ("description", "mô tả", "mo ta")
+IMAGE_KEYS = ("image", "ảnh", "anh", "image_url", "hình", "hinh")
 PHONE_KEYS = ("phone", "sđt", "sdt", "tel", "mobile", "điện thoại", "dien thoai")
 EMAIL_KEYS = ("email", "e-mail", "mail")
 NOTE_KEYS = ("note", "ghi chú", "ghichu", "ghi chu", "comments")
@@ -57,7 +58,14 @@ def _build_header_index(headers: list[str]) -> dict[str, int]:
     return idx
 
 
-def _find_col(header_idx: dict[str, int], key_map: tuple[str, ...]) -> int | None:
+def _find_col(header_idx: dict[str, int], key_map: tuple[str, ...], mapping_key: str | None = None, custom_mapping: dict[str, str] | None = None) -> int | None:
+    # 1. Ưu tiên custom mapping nếu có
+    if custom_mapping and mapping_key and mapping_key in custom_mapping:
+        target_header = _norm_key(custom_mapping[mapping_key])
+        if target_header in header_idx:
+            return header_idx[target_header]
+
+    # 2. Heuristics cũ
     for key in key_map:
         nk = _norm_key(key)
         if nk in header_idx:
@@ -142,6 +150,36 @@ async def list_sheet_titles(db: AsyncSession, workspace: Workspace, spreadsheet_
         raise ValueError(_http_error_message(e)) from e
 
 
+async def fetch_sheet_preview(
+    db: AsyncSession,
+    workspace: Workspace,
+    spreadsheet_id: str,
+    sheet_name: str,
+    limit: int = 10,
+) -> list[list[Any]]:
+    """Lấy N dòng đầu tiên để người dùng xem trước và ánh xạ cột."""
+    spreadsheet_id = _extract_spreadsheet_id(spreadsheet_id)
+    access = await ensure_valid_access_token(db, workspace)
+    service = await _get_sheets_service(workspace, access)
+    
+    # Chỉ lấy dòng 1 đến limit
+    rng = f"'{sheet_name.replace(chr(39), chr(39) * 2)}'!1:{limit}"
+
+    def _call():
+        resp = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=rng, majorDimension="ROWS")
+            .execute()
+        )
+        return resp.get("values") or []
+
+    try:
+        return await asyncio.to_thread(_call)
+    except HttpError as e:
+        raise ValueError(_http_error_message(e)) from e
+
+
 async def fetch_sheet_values(
     db: AsyncSession,
     workspace: Workspace,
@@ -184,6 +222,7 @@ async def import_products_from_values(
     rows_2d: list[list[Any]],
     header_row_index: int = 0,
     data_start_index: int = 1,
+    column_mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """rows_2d: toàn bộ các dòng; header_row_index là chỉ số 0-based của dòng tiêu đề."""
     if header_row_index >= len(rows_2d):
@@ -193,14 +232,15 @@ async def import_products_from_values(
     headers = [str(h or "") for h in headers_raw]
     hidx = _build_header_index(headers)
 
-    col_name = _find_col(hidx, NAME_KEYS)
-    col_price = _find_col(hidx, PRICE_KEYS)
-    col_qty = _find_col(hidx, QTY_KEYS)
-    col_thr = _find_col(hidx, THRESHOLD_KEYS)
-    col_desc = _find_col(hidx, DESC_KEYS)
+    col_name = _find_col(hidx, NAME_KEYS, "name", column_mapping)
+    col_price = _find_col(hidx, PRICE_KEYS, "price", column_mapping)
+    col_qty = _find_col(hidx, QTY_KEYS, "quantity", column_mapping)
+    col_thr = _find_col(hidx, THRESHOLD_KEYS, "stock_threshold", column_mapping)
+    col_desc = _find_col(hidx, DESC_KEYS, "description", column_mapping)
+    col_image = _find_col(hidx, IMAGE_KEYS, "image_url", column_mapping)
 
     if col_name is None:
-        raise ValueError("Không tìm thấy cột tên sản phẩm (name / tên sản phẩm ...).")
+        raise ValueError("Không tìm thấy cột tên sản phẩm (hệ thống không tự đoán được và cũng không có ánh xạ thủ công).")
 
     created, updated, errors = 0, 0, []
 
@@ -226,6 +266,7 @@ async def import_products_from_values(
             except ValueError:
                 threshold = 5
             desc = _cell(row, col_desc) if col_desc is not None else ""
+            img_url = _cell(row, col_image) if col_image is not None else ""
 
             stmt = select(Product).where(
                 Product.workspace_id == workspace_id,
@@ -240,6 +281,8 @@ async def import_products_from_values(
                 existing.stock_threshold = threshold
                 if desc:
                     existing.description = desc
+                if img_url:
+                    existing.image_url = img_url
                 updated += 1
                 if existing.quantity <= existing.stock_threshold:
                     await NotificationService.notify_low_stock(
@@ -256,6 +299,7 @@ async def import_products_from_values(
                     price=price,
                     quantity=quantity,
                     stock_threshold=threshold,
+                    image_url=img_url or None,
                 )
                 db.add(product)
                 created += 1
@@ -286,6 +330,7 @@ async def import_customers_from_values(
     rows_2d: list[list[Any]],
     header_row_index: int = 0,
     data_start_index: int = 1,
+    column_mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if header_row_index >= len(rows_2d):
         raise ValueError("Không có dòng tiêu đề.")
@@ -293,10 +338,10 @@ async def import_customers_from_values(
     headers_raw = rows_2d[header_row_index]
     hidx = _build_header_index([str(h or "") for h in headers_raw])
 
-    col_name = _find_col(hidx, NAME_KEYS + ("họ tên", "ho ten", "fullname", "full name"))
-    col_phone = _find_col(hidx, PHONE_KEYS)
-    col_email = _find_col(hidx, EMAIL_KEYS)
-    col_note = _find_col(hidx, NOTE_KEYS)
+    col_name = _find_col(hidx, NAME_KEYS + ("họ tên", "ho ten", "fullname", "full name"), "name", column_mapping)
+    col_phone = _find_col(hidx, PHONE_KEYS, "phone", column_mapping)
+    col_email = _find_col(hidx, EMAIL_KEYS, "email", column_mapping)
+    col_note = _find_col(hidx, NOTE_KEYS, "note", column_mapping)
 
     if col_phone is None and col_email is None:
         raise ValueError("Cần ít nhất một cột số điện thoại hoặc email để khớp khách hàng.")
@@ -378,6 +423,7 @@ async def run_import_for_workspace(
     header_row_1based: int = 1,
     data_start_row_1based: int = 2,
     range_a1: str | None = None,
+    column_mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     spreadsheet_id = _extract_spreadsheet_id(spreadsheet_id)
     values = await fetch_sheet_values(
@@ -388,5 +434,5 @@ async def run_import_for_workspace(
 
     entity_norm = (entity or "products").lower()
     if entity_norm in ("customer", "customers", "khach", "khách"):
-        return await import_customers_from_values(db, workspace.id, values, h_idx, d_idx)
-    return await import_products_from_values(db, workspace.id, values, h_idx, d_idx)
+        return await import_customers_from_values(db, workspace.id, values, h_idx, d_idx, column_mapping)
+    return await import_products_from_values(db, workspace.id, values, h_idx, d_idx, column_mapping)
