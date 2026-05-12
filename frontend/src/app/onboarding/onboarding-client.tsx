@@ -78,7 +78,7 @@ export default function OnboardingClient() {
     if (searchParams?.get("google") !== "connected") return;
     googleReturnHandled.current = true;
     void (async () => {
-      await botMsg("Đã kết nối Google! Hãy chọn trang tính từ Google Drive của bạn để bắt đầu.", 400);
+      await botMsg("Đã kết nối Google! Hãy dán đường link (URL) trang tính Google Sheets của bạn vào đây để bắt đầu.", 400);
       setStep("product-sheet");
       setTimeout(() => inputRef.current?.focus(), 500);
     })();
@@ -384,18 +384,20 @@ export default function OnboardingClient() {
     }
   };
 
-  const openPicker = async () => {
-    try {
-      const { data: cfg } = await googleAuthApi.pickerConfig();
-      if (!cfg.developer_key) {
-        await botMsg("⚠️ Tính năng chọn file (Google Picker) chưa được cấu hình API Key. Hãy liên hệ quản trị viên.", 600);
-        return;
-      }
-      const id = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key);
-      if (id) await onSheetSelected(id);
-    } catch (e: unknown) {
-      await botMsg(formatApiError(e), 600);
+  const submitSheetUrl = async () => {
+    const val = input.trim();
+    if (!val) return;
+    
+    const match = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (!match) {
+      await botMsg("⚠️ Đường link không hợp lệ. Vui lòng copy link chính xác từ Google Sheets (có dạng https://docs.google.com/spreadsheets/d/...).");
+      return;
     }
+    
+    const spreadsheetId = match[1];
+    setInput("");
+    userMsg(val);
+    await onSheetSelected(spreadsheetId);
   };
 
   const startSheetSync = async () => {
@@ -420,15 +422,9 @@ export default function OnboardingClient() {
           </button>
         ));
       } else {
-        await botMsg("Bạn đã kết nối Google! Hãy chọn file trang tính từ Google Drive của bạn:", 800, (
-          <button
-            type="button"
-            onClick={() => void openPicker()}
-            className="w-full rounded-2xl border-2 border-emerald-200 bg-white px-4 py-4 text-sm font-black text-emerald-800 shadow-lg shadow-emerald-500/10 hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
-          >
-            <TableIcon className="h-5 w-5" /> Chọn trang tính (Drive)
-          </button>
-        ));
+        await botMsg("Bạn đã kết nối Google! Hãy dán đường link (URL) trang tính Google Sheets của bạn vào đây:", 800);
+        setStep("product-sheet");
+        setTimeout(() => inputRef.current?.focus(), 1000);
       }
     } catch {
       await botMsg("Không kiểm tra được trạng thái Google. Thử đăng nhập lại.", 600);
@@ -503,17 +499,17 @@ export default function OnboardingClient() {
   };
 
   // ── Input field shortcut ─────────────────────────────────────────────────
-  const inputField = (placeholder: string, onSubmit: () => void, type = "text") => (
+  const inputField = (placeholder: string, onSubmit: () => void, type = "text", name = "") => (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="flex gap-2">
       {type === "number" ? (
         <div className="relative flex-1">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400">₩</span>
           <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder={placeholder} type="number" className="ob-input pl-9" />
+            placeholder={placeholder} type="number" className="ob-input pl-9" autoComplete="new-password" name={name || `input-${Math.random()}`} />
         </div>
       ) : (
         <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)}
-          placeholder={placeholder} className="ob-input" />
+          placeholder={placeholder} className="ob-input" autoComplete="new-password" spellCheck="false" name={name || `input-${Math.random()}`} />
       )}
       <button type="submit" className="btn-premium px-5 py-3 text-sm">Gửi</button>
     </form>
@@ -523,10 +519,10 @@ export default function OnboardingClient() {
   const renderActions = () => {
     if (typing) return null;
     switch (step) {
-      case "bank-account": return inputField("VD: 1234567890", () => submitBank("account"));
+      case "bank-account": return inputField("VD: 1234567890", () => submitBank("account"), "text", "bank-account");
       case "bank-name":    
-        return inputField("Tên ngân hàng (VD: Vietcombank, BIDV...)", () => submitBank("bank"));
-      case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"));
+        return inputField("Tên ngân hàng (VD: Vietcombank, BIDV...)", () => submitBank("bank"), "text", "bank-name-random");
+      case "bank-holder":  return inputField("Tên chủ tài khoản", () => submitBank("holder"), "text", "bank-holder-random");
       case "product-name":  return inputField("Hoặc nhập tên sản phẩm...", () => submitProduct("name"));
       case "product-price": return inputField("50000", () => submitProduct("price"), "number");
       case "product-desc":
@@ -539,6 +535,7 @@ export default function OnboardingClient() {
             </button>
           </div>
         );
+      case "product-sheet": return inputField("Dán link Google Sheets vào đây...", () => submitSheetUrl());
       default: return null;
     }
   };

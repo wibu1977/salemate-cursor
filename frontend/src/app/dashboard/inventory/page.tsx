@@ -71,18 +71,9 @@ export default function InventoryPage() {
 
   const sheetIdNormalized = normalizeSheetId(sheetId);
 
-  const openPicker = async () => {
-    try {
-      const { data: cfg } = await googleAuthApi.pickerConfig();
-      if (!cfg.developer_key) {
-        toast("Chưa cấu hình GOOGLE_PICKER_API_KEY", "error");
-        return;
-      }
-      const id = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key);
-      if (id) setSheetId(id);
-    } catch (e: unknown) {
-      toast(formatApiError(e), "error");
-    }
+  const handleSheetIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSheetId(e.target.value);
+    setImportStep(0);
   };
 
   const { data: tabData } = useQuery({
@@ -311,19 +302,23 @@ export default function InventoryPage() {
                 {googleStatus?.connected && (
                   <div className="flex flex-col gap-6">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                      <button
-                        type="button"
-                        onClick={openPicker}
-                        className="flex items-center gap-3 rounded-2xl border-2 border-slate-100 bg-white px-6 py-4 text-sm font-black text-slate-700 transition-all hover:bg-slate-50 hover:border-accent active:scale-95"
-                      >
-                        <TableIcon className="h-5 w-5 text-accent" />
-                        {sheetIdNormalized ? "THAY ĐỔI TRANG TÍNH" : "CHỌN TRANG TÍNH TỪ DRIVE"}
-                      </button>
+                      <div className="relative w-full max-w-lg">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                          <TableIcon className="h-5 w-5 text-slate-400" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Dán đường link Google Sheets vào đây..."
+                          value={sheetId}
+                          onChange={handleSheetIdChange}
+                          className="w-full rounded-2xl border-2 border-slate-100 bg-white py-3.5 pl-12 pr-4 text-sm font-semibold shadow-sm transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 outline-none"
+                        />
+                      </div>
                       
                       {sheetIdNormalized && (
-                        <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-2 text-[10px] font-black text-emerald-600 ring-1 ring-emerald-200">
-                          <CheckCircle2 className="h-3 w-3" />
-                          FILE ID: {sheetIdNormalized.slice(0, 8)}...
+                        <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-[11px] font-black text-emerald-600 ring-1 ring-emerald-200">
+                          <CheckCircle2 className="h-4 w-4" />
+                          LINK HỢP LỆ
                         </div>
                       )}
                     </div>

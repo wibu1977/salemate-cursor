@@ -1,24 +1,31 @@
 "use client";
 
 import Script from "next/script";
+import { useEffect } from "react";
 
 const FB_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID?.trim() || "";
 
 export function FacebookSDK() {
-  if (typeof window !== "undefined") {
-    window.fbAsyncInit = function () {
-      console.log("[Salemate] fbAsyncInit triggered.");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.fbAsyncInit = function () {
+        console.log("[Salemate] fbAsyncInit triggered.");
+        if (window.FB) {
+          window.FB.init({
+            appId: FB_APP_ID,
+            cookie: true,
+            xfbml: true,
+            version: "v21.0",
+          });
+          console.log("[Salemate] FB.init successful.");
+        }
+      };
+
       if (window.FB) {
-        window.FB.init({
-          appId: FB_APP_ID,
-          cookie: true,
-          xfbml: true,
-          version: "v21.0",
-        });
-        console.log("[Salemate] FB.init successful.");
+        window.fbAsyncInit();
       }
-    };
-  }
+    }
+  }, []);
 
   if (!FB_APP_ID) return null;
 
@@ -49,6 +56,7 @@ declare global {
         callback: (response: { authResponse?: { accessToken: string } }) => void,
         options?: Record<string, unknown>
       ) => void;
+      api: (path: string, callback: (response: any) => void) => void;
     };
   }
 }
