@@ -53,7 +53,7 @@ async def update_product(
     return await InventoryService.update_product(db, workspace_id, product_id, payload)
 
 
-@router.get("/google/spreadsheets/{spreadsheet_id}/tabs", response_model=SheetTabsResponse)
+@router.get("/google/spreadsheets/tabs", response_model=SheetTabsResponse)
 async def spreadsheet_tabs(
     spreadsheet_id: str,
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
@@ -71,7 +71,7 @@ async def spreadsheet_tabs(
     return SheetTabsResponse(titles=titles)
 
 
-@router.get("/google/spreadsheets/{spreadsheet_id}/preview", response_model=SheetPreviewResponse)
+@router.get("/google/spreadsheets/preview", response_model=SheetPreviewResponse)
 async def spreadsheet_preview(
     spreadsheet_id: str,
     sheet_name: str,
