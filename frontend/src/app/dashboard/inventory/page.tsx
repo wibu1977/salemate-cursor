@@ -22,7 +22,6 @@ import {
   Layers,
   Sparkles
 } from "lucide-react";
-import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
 
 interface ProductData {
   id: string;
@@ -76,15 +75,27 @@ export default function InventoryPage() {
     setImportStep(0);
   };
 
-  const { data: tabData } = useQuery({
+  const {
+    data: tabData,
+    isLoading: isLoadingTabs,
+    isError: isTabsError,
+    error: tabsError,
+    refetch: refetchTabs,
+  } = useQuery({
     queryKey: ["sheet-tabs", sheetIdNormalized],
     queryFn: () => inventoryApi.sheetTabs(sheetIdNormalized).then((r) => r.data),
     enabled:
       !!googleStatus?.connected &&
       sheetIdNormalized.length >= 20,
   });
-  
-  const { data: previewData, isLoading: isLoadingPreview } = useQuery({
+
+  const {
+    data: previewData,
+    isLoading: isLoadingPreview,
+    isError: isPreviewError,
+    error: previewError,
+    refetch: refetchPreview,
+  } = useQuery({
     queryKey: ["sheet-preview", sheetIdNormalized, sheetName],
     queryFn: () => inventoryApi.sheetPreview(sheetIdNormalized, sheetName).then((r) => r.data),
     enabled: !!googleStatus?.connected && !!sheetIdNormalized && !!sheetName && importStep === 1,
@@ -323,7 +334,24 @@ export default function InventoryPage() {
                       )}
                     </div>
 
-                    {tabData?.titles?.length ? (
+                    {isTabsError && sheetIdNormalized ? (
+                      <div className="space-y-3 rounded-2xl bg-rose-50 p-5 ring-1 ring-rose-100">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+                          <div className="space-y-1">
+                            <p className="text-sm font-black text-rose-900">Không đọc được danh sách tab</p>
+                            <p className="text-xs font-medium text-rose-800/90">{formatApiError(tabsError)}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void refetchTabs()}
+                          className="rounded-xl bg-rose-900 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-rose-950"
+                        >
+                          Thử lại
+                        </button>
+                      </div>
+                    ) : tabData?.titles?.length ? (
                       <div className="space-y-4">
                         <div className="space-y-3">
                           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">
@@ -360,10 +388,16 @@ export default function InventoryPage() {
                         )}
                       </div>
                     ) : sheetIdNormalized ? (
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
-                        Đang đọc các tab...
-                      </div>
+                      isLoadingTabs ? (
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+                          Đang đọc các tab...
+                        </div>
+                      ) : (
+                        <p className="text-xs font-bold text-slate-400">
+                          Spreadsheet không có tab hoặc chưa có dữ liệu tab.
+                        </p>
+                      )
                     ) : null}
 
                     {importStep === 1 && (
@@ -388,6 +422,23 @@ export default function InventoryPage() {
                           <div className="flex flex-col items-center justify-center py-20 gap-4">
                             <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent-soft border-t-accent" />
                             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Đang phân tích dữ liệu...</p>
+                          </div>
+                        ) : isPreviewError ? (
+                          <div className="space-y-4 rounded-2xl bg-rose-50 p-6 ring-1 ring-rose-100">
+                            <div className="flex items-start gap-3">
+                              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+                              <div className="space-y-1">
+                                <p className="text-sm font-black text-rose-900">Không tải được dữ liệu xem trước sheet</p>
+                                <p className="text-xs font-medium text-rose-800/90">{formatApiError(previewError)}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void refetchPreview()}
+                              className="rounded-xl bg-rose-900 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-rose-950"
+                            >
+                              Thử lại
+                            </button>
                           </div>
                         ) : (
                           <div className="space-y-8">

@@ -56,7 +56,7 @@ declare global {
         callback: (response: { authResponse?: { accessToken: string } }) => void,
         options?: Record<string, unknown>
       ) => void;
-      api: (path: string, callback: (response: any) => void) => void;
+      api: (path: string, callback: (response: unknown) => void) => void;
     };
   }
 }

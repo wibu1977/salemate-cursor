@@ -5,7 +5,6 @@ import { FacebookSDK } from "@/components/facebook-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { pagesApi, authApi, inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
-import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
 import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
 
 // ── Facebook SDK types (type alias avoids global Window conflict) ───────────
@@ -163,8 +162,9 @@ export default function OnboardingClient() {
         }
         
         await botMsg("Đang lấy danh sách Fanpage của bạn... 🔄", 600);
-        fb.api("/me/accounts", (data) => {
+        fb.api("/me/accounts", (rawData: unknown) => {
           (async () => {
+            const data = rawData as { data?: FBPageData[] };
             if (!data?.data?.[0]) {
               await botMsg("❌ Không tìm thấy Fanpage nào. Hãy đảm bảo bạn đã tạo Fanpage và cấp quyền cho Salemate.");
               return;
