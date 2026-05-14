@@ -8,7 +8,7 @@ import uuid
 from app.database import get_db
 from app.api.deps import get_current_workspace_id
 from app.config import get_settings
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.schemas.payment import (
     CheckoutRequest, CheckoutResponse,
     PaymentConfirmRequest, PaymentConfirmResponse,
@@ -124,7 +124,7 @@ async def get_payment_status(
     return OrderPaymentStatus(
         order_id=order.id,
         memo_code=order.memo_code,
-        status=order.status.value,
+        status=order.status.value if isinstance(order.status, OrderStatus) else str(order.status),
         payment_method=order.payment_method.value if order.payment_method else None,
         total_amount=order.total_amount,
         currency=order.currency,

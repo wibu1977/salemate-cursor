@@ -173,17 +173,17 @@ class AdminService:
             return {"error": "Order not found"}
 
         if payload.action == "approve":
-            order.status = OrderStatus.CONFIRMED.value
+            order.status = OrderStatus.CONFIRMED
             order.confirmed_at = datetime.utcnow()
 
             from app.services.stock_service import deduct_stock_and_alert
             await deduct_stock_and_alert(db, order)
         elif payload.action == "reject":
-            order.status = OrderStatus.REJECTED.value
+            order.status = OrderStatus.REJECTED
 
         await db.commit()
 
         from app.services.notification_service import NotificationService
         await NotificationService.notify_order_update(order)
 
-        return {"status": "ok", "order_status": order.status.value}
+        return {"status": "ok", "order_status": order.status.value if isinstance(order.status, OrderStatus) else order.status}

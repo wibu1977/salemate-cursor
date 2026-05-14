@@ -1,6 +1,6 @@
 from app.config import get_settings
 from app.services.meta_service import MetaService
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 
 settings = get_settings()
 
@@ -11,6 +11,13 @@ def _frontend_base() -> str:
     return settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else FRONTEND_URL
 
 
+def _status_str(status) -> str:
+    """Safely convert an OrderStatus enum or raw string to its string value."""
+    if isinstance(status, OrderStatus):
+        return status.value
+    return str(status)
+
+
 class NotificationService:
     """Send admin notifications via Salemate v1 Messenger page."""
 
@@ -19,7 +26,7 @@ class NotificationService:
         msg = (
             f"📦 Đơn hàng cập nhật\n"
             f"Mã: {order.memo_code}\n"
-            f"Trạng thái: {order.status.value}\n"
+            f"Trạng thái: {_status_str(order.status)}\n"
             f"Số tiền: {order.total_amount:,} {order.currency}"
         )
         webview_url = f"{_frontend_base()}/webview/order/{order.id}"
