@@ -4,6 +4,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inventoryApi, googleAuthApi, pollImportJob, formatApiError, type DuplicateStrategy } from "@/lib/api";
+import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
+import { ColumnConnector, type ConnectorField } from "@/components/import/ColumnConnector";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
@@ -20,8 +22,55 @@ import {
   AlertCircle,
   CheckCircle2,
   Layers,
-  Sparkles
+  Sparkles,
+  FolderOpen,
 } from "lucide-react";
+
+const PRODUCT_IMPORT_FIELDS: ConnectorField[] = [
+  {
+    key: "name",
+    label: "Tên sản phẩm",
+    required: true,
+    icon: <Box className="h-4 w-4" />,
+    description: "Dùng để nhận diện và cập nhật sản phẩm",
+  },
+  {
+    key: "price",
+    label: "Giá bán",
+    icon: <DollarSign className="h-4 w-4" />,
+    description: "Tiền tệ — hỗ trợ phân tách . ,",
+  },
+  {
+    key: "quantity",
+    label: "Số lượng",
+    icon: <Layers className="h-4 w-4" />,
+    description: "Tồn kho hiện tại",
+  },
+  {
+    key: "stock_threshold",
+    label: "Ngưỡng cảnh báo",
+    icon: <AlertCircle className="h-4 w-4" />,
+    description: "Báo động khi tồn thấp",
+  },
+  {
+    key: "description",
+    label: "Mô tả",
+    icon: <ImageIcon className="h-4 w-4" />,
+    description: "Chi tiết sản phẩm",
+  },
+  {
+    key: "image_url",
+    label: "Ảnh (URL)",
+    icon: <ImageIcon className="h-4 w-4" />,
+    description: "URL hình công khai",
+  },
+  {
+    key: "category",
+    label: "Danh mục",
+    icon: <Layers className="h-4 w-4" />,
+    description: "Phân loại / nhóm hàng",
+  },
+];
 
 interface ProductData {
   id: string;
@@ -52,7 +101,9 @@ export default function InventoryPage() {
   const [editProduct, setEditProduct] = useState<ProductData | null>(null);
   const [showSync, setShowSync] = useState(false);
   const [importSource, setImportSource] = useState<"sheets" | "upload">("sheets");
-  const [sheetId, setSheetId] = useState("");
+  const [pickedSpreadsheetId, setPickedSpreadsheetId] = useState("");
+  const [pickedSpreadsheetName, setPickedSpreadsheetName] = useState<string | null>(null);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [sheetName, setSheetName] = useState("Sheet1");
   const [importStep, setImportStep] = useState(0);
   const [headerRow, setHeaderRow] = useState(1);
@@ -82,16 +133,34 @@ export default function InventoryPage() {
     queryFn: () => googleAuthApi.status().then((r) => r.data),
   });
 
-  const normalizeSheetId = (raw: string) => {
-    const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    return m?.[1] || raw.trim();
-  };
-
-  const sheetIdNormalized = normalizeSheetId(sheetId);
-
-  const handleSheetIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSheetId(e.target.value);
-    setImportStep(0);
+  const openGooglePickerForSheet = async () => {
+    if (!googleStatus?.connected) {
+      toast("Hãy kết nối Google trước.", "error");
+      return;
+    }
+    setPickerBusy(true);
+    try {
+      const { data: cfg } = await googleAuthApi.pickerConfig();
+      const key = cfg.developer_key?.trim();
+      if (!key) {
+        toast(
+          "Thiếu GOOGLE_PICKER_API_KEY trên backend — cần khóa API Picker trong Google Cloud.",
+          "error",
+        );
+        return;
+      }
+      const picked = await pickGoogleSpreadsheet(cfg.access_token, key);
+      if (picked) {
+        setPickedSpreadsheetId(picked.id);
+        setPickedSpreadsheetName(picked.name || picked.id);
+        setImportStep(0);
+        setValidateSummary(null);
+      }
+    } catch (e: unknown) {
+      toast(formatApiError(e), "error");
+    } finally {
+      setPickerBusy(false);
+    }
   };
 
   const {
@@ -101,11 +170,12 @@ export default function InventoryPage() {
     error: tabsError,
     refetch: refetchTabs,
   } = useQuery({
-    queryKey: ["sheet-tabs", sheetIdNormalized],
-    queryFn: () => inventoryApi.sheetTabs(sheetIdNormalized).then((r) => r.data),
+    queryKey: ["sheet-tabs", pickedSpreadsheetId],
+    queryFn: () => inventoryApi.sheetTabs(pickedSpreadsheetId).then((r) => r.data),
     enabled:
       !!googleStatus?.connected &&
-      sheetIdNormalized.length >= 20,
+      importSource === "sheets" &&
+      pickedSpreadsheetId.trim().length >= 15,
   });
 
   const {
@@ -115,13 +185,13 @@ export default function InventoryPage() {
     error: previewError,
     refetch: refetchPreview,
   } = useQuery({
-    queryKey: ["sheet-preview", sheetIdNormalized, sheetName, importSource],
+    queryKey: ["sheet-preview", pickedSpreadsheetId, sheetName, importSource],
     queryFn: () =>
-      inventoryApi.sheetPreview(sheetIdNormalized, sheetName, 10, "products").then((r) => r.data),
+      inventoryApi.sheetPreview(pickedSpreadsheetId, sheetName, 10, "products").then((r) => r.data),
     enabled:
       importSource === "sheets" &&
       !!googleStatus?.connected &&
-      !!sheetIdNormalized &&
+      !!pickedSpreadsheetId.trim() &&
       !!sheetName &&
       importStep === 1,
   });
@@ -152,6 +222,12 @@ export default function InventoryPage() {
     if (!activePreview?.rows?.length) return [];
     return activePreview.rows[0].map((h: unknown) => String(h ?? ""));
   }, [activePreview]);
+
+  const sampleRowForConnector = useMemo(() => {
+    if (!activePreview?.rows?.length) return undefined;
+    const idx = Math.min(Math.max(dataStartRow - 1, 1), activePreview.rows.length - 1);
+    return activePreview.rows[idx] as unknown[] | undefined;
+  }, [activePreview, dataStartRow]);
 
   useEffect(() => {
     if (tabData?.titles?.length && !tabData.titles.includes(sheetName)) {
@@ -278,7 +354,7 @@ export default function InventoryPage() {
     mutationFn: async () => {
       if (importSource === "sheets") {
         const { data } = await inventoryApi.validateSheets({
-          spreadsheet_id: sheetIdNormalized,
+          spreadsheet_id: pickedSpreadsheetId,
           sheet_name: sheetName,
           entity: "products",
           header_row: headerRow,
@@ -317,7 +393,7 @@ export default function InventoryPage() {
   const importSheetsMutation = useMutation({
     mutationFn: async () => {
       const { data: start } = await inventoryApi.importSheets({
-        spreadsheet_id: sheetIdNormalized,
+        spreadsheet_id: pickedSpreadsheetId,
         sheet_name: sheetName,
         entity: "products",
         header_row: headerRow,
@@ -341,7 +417,8 @@ export default function InventoryPage() {
       );
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowSync(false);
-      setSheetId("");
+      setPickedSpreadsheetId("");
+      setPickedSpreadsheetName(null);
       setImportStep(0);
       setColumnMapping({});
       setFilePreviewData(null);
@@ -462,7 +539,8 @@ export default function InventoryPage() {
                   setUploadFile(null);
                   setUploadFileName(null);
                   setValidateSummary(null);
-                  setSheetId("");
+                  setPickedSpreadsheetId("");
+                  setPickedSpreadsheetName(null);
                 }}
                 className={`rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
                   importSource === "upload"
@@ -486,7 +564,7 @@ export default function InventoryPage() {
                     </h3>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                       {importSource === "sheets"
-                        ? "Kết nối Google → nhập Spreadsheet ID hoặc link → chọn tab"
+                        ? "Chọn spreadsheet từ Google Drive → chọn tab → ánh xạ cột"
                         : "Chọn .csv, .xlsx hoặc .xls — cùng bước ánh xạ như Sheets"}
                     </p>
                   </div>
@@ -508,29 +586,43 @@ export default function InventoryPage() {
                 )}
                 {importSource === "sheets" && googleStatus?.connected && (
                   <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                      <div className="relative w-full max-w-lg">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                          <TableIcon className="h-5 w-5 text-slate-400" />
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                      <button
+                        type="button"
+                        disabled={pickerBusy}
+                        onClick={() => void openGooglePickerForSheet()}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-8 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-black disabled:opacity-60"
+                      >
+                        {pickerBusy ? (
+                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        ) : (
+                          <FolderOpen className="h-5 w-5 shrink-0 text-accent" />
+                        )}
+                        CHỌN FILE TỪ GOOGLE DRIVE
+                      </button>
+                      {pickedSpreadsheetId && (
+                        <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-50 px-5 py-3 text-xs ring-1 ring-emerald-200">
+                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                          <span className="max-w-[min(420px,80vw)] truncate font-black text-emerald-900">
+                            {pickedSpreadsheetName || pickedSpreadsheetId}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void openGooglePickerForSheet()}
+                            className="shrink-0 text-[11px] font-black uppercase tracking-wider text-accent underline-offset-4 hover:underline"
+                          >
+                            Đổi file
+                          </button>
                         </div>
-                        <input
-                          type="text"
-                          placeholder="Dán đường link Google Sheets vào đây..."
-                          value={sheetId}
-                          onChange={handleSheetIdChange}
-                          className="w-full rounded-2xl border-2 border-slate-100 bg-white py-3.5 pl-12 pr-4 text-sm font-semibold shadow-sm transition-all focus:border-accent focus:ring-4 focus:ring-accent/10 outline-none"
-                        />
-                      </div>
-                      
-                      {sheetIdNormalized && (
-                        <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-[11px] font-black text-emerald-600 ring-1 ring-emerald-200">
-                          <CheckCircle2 className="h-4 w-4" />
-                          LINK HỢP LỆ
-                        </div>
+                      )}
+                      {!pickedSpreadsheetId && !pickerBusy && (
+                        <p className="text-xs font-bold text-slate-400">
+                          Mở trình chọn file của Google và chọn trang tính cần nhập.
+                        </p>
                       )}
                     </div>
 
-                    {isTabsError && sheetIdNormalized ? (
+                    {isTabsError && pickedSpreadsheetId ? (
                       <div className="space-y-3 rounded-2xl bg-rose-50 p-5 ring-1 ring-rose-100">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
@@ -576,14 +668,16 @@ export default function InventoryPage() {
 
                         {importStep === 0 && (
                           <button
+                            type="button"
+                            disabled={!pickedSpreadsheetId}
                             onClick={() => setImportStep(1)}
-                            className="btn-premium w-full lg:w-auto"
+                            className="btn-premium w-full lg:w-auto disabled:opacity-50"
                           >
                             TIẾP THEO: ÁNH XẠ CỘT
                           </button>
                         )}
                       </div>
-                    ) : sheetIdNormalized ? (
+                    ) : pickedSpreadsheetId.trim().length >= 15 ? (
                       isLoadingTabs ? (
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
@@ -626,7 +720,9 @@ export default function InventoryPage() {
                 )}
 
                 {importStep === 1 &&
-                  ((importSource === "sheets" && !!googleStatus?.connected) ||
+                  ((importSource === "sheets" &&
+                    !!googleStatus?.connected &&
+                    !!pickedSpreadsheetId.trim()) ||
                     (importSource === "upload" && !!filePreviewData)) && (
                   <div className="space-y-8 rounded-[2.5rem] bg-slate-50/50 p-8 ring-1 ring-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="flex flex-wrap items-end gap-4">
@@ -679,7 +775,7 @@ export default function InventoryPage() {
                           Ánh xạ cột dữ liệu
                         </h4>
                         <p className="text-[10px] font-bold text-slate-400">
-                          Chọn cột tương ứng từ file của bạn
+                          Bấm cột trong file (trái), rồi bấm trường hệ thống (phải) để nối
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -738,132 +834,14 @@ export default function InventoryPage() {
                       </div>
                     ) : (
                       <div className="space-y-8">
-                        <div className="space-y-10">
-                          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-                            {[
-                              {
-                                key: "name",
-                                label: "Tên sản phẩm",
-                                required: true,
-                                icon: <Box className="h-4 w-4" />,
-                                description: "Dùng để nhận diện và cập nhật sản phẩm",
-                              },
-                              {
-                                key: "price",
-                                label: "Giá bán",
-                                icon: <DollarSign className="h-4 w-4" />,
-                                description: "Tiền tệ — hỗ trợ phân tách . ,",
-                              },
-                              {
-                                key: "quantity",
-                                label: "Số lượng",
-                                icon: <Layers className="h-4 w-4" />,
-                                description: "Tồn kho hiện tại",
-                              },
-                              {
-                                key: "stock_threshold",
-                                label: "Ngưỡng cảnh báo",
-                                icon: <AlertCircle className="h-4 w-4" />,
-                                description: "Báo động khi tồn thấp",
-                              },
-                              {
-                                key: "description",
-                                label: "Mô tả",
-                                icon: <ImageIcon className="h-4 w-4" />,
-                                description: "Chi tiết sản phẩm",
-                              },
-                              {
-                                key: "image_url",
-                                label: "Ảnh (URL)",
-                                icon: <ImageIcon className="h-4 w-4" />,
-                                description: "URL hình công khai",
-                              },
-                              {
-                                key: "category",
-                                label: "Danh mục",
-                                icon: <Layers className="h-4 w-4" />,
-                                description: "Phân loại / nhóm hàng",
-                              },
-                            ].map((field) => {
-                              const mappedCol = columnMapping[field.key];
-                              const colIndex = previewHeaders.indexOf(mappedCol);
-                              const sampleValue =
-                                colIndex !== -1 && activePreview?.rows?.[1]?.[colIndex];
-
-                              return (
-                                <div
-                                  key={field.key}
-                                  className="group relative space-y-3 rounded-3xl bg-white p-5 ring-1 ring-slate-100 transition-all hover:ring-accent/30 hover:shadow-xl hover:shadow-accent/5"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-accent-soft group-hover:text-accent transition-colors">
-                                        {field.icon}
-                                      </div>
-                                      <div>
-                                        <label className="text-[11px] font-black uppercase tracking-widest text-slate-700">
-                                          {field.label}{" "}
-                                          {field.required && <span className="text-rose-500">*</span>}
-                                        </label>
-                                        <p className="text-[9px] font-bold text-slate-400">
-                                          {field.description}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    {mappedCol && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <select
-                                      value={mappedCol || ""}
-                                      onChange={(e) =>
-                                        setColumnMapping({
-                                          ...columnMapping,
-                                          [field.key]: e.target.value,
-                                        })
-                                      }
-                                      className="w-full rounded-xl border-none bg-slate-50 px-4 py-3 text-xs font-bold shadow-inner transition-all focus:ring-2 focus:ring-accent outline-none appearance-none hover:bg-slate-100 cursor-pointer"
-                                      style={{
-                                        backgroundImage:
-                                          'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
-                                        backgroundRepeat: "no-repeat",
-                                        backgroundPosition: "right 1rem center",
-                                        backgroundSize: "0.8rem",
-                                      }}
-                                    >
-                                      <option value="">-- Bỏ qua trường này --</option>
-                                      {previewHeaders.map((h, i) => (
-                                        <option key={i} value={h}>
-                                          {h}
-                                        </option>
-                                      ))}
-                                    </select>
-
-                                    {mappedCol && sampleValue !== undefined && (
-                                      <div className="flex items-center gap-2 px-1">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                                          Giá trị mẫu:
-                                        </span>
-                                        <span className="text-[9px] font-bold text-accent truncate max-w-[150px]">
-                                          {String(sampleValue || "(Trống)")}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="flex justify-center">
-                            <button
-                              onClick={() => setColumnMapping({})}
-                              className="flex items-center gap-2 text-[10px] font-black text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              Xóa tất cả ánh xạ
-                            </button>
-                          </div>
+                        <div className="space-y-6">
+                          <ColumnConnector
+                            headers={previewHeaders}
+                            sampleRow={sampleRowForConnector}
+                            systemFields={PRODUCT_IMPORT_FIELDS}
+                            mapping={columnMapping}
+                            onChange={setColumnMapping}
+                          />
 
                           {activePreview?.rows && activePreview.rows.length > 1 && (
                             <div className="space-y-4">

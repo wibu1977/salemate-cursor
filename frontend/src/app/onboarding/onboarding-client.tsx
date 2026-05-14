@@ -5,7 +5,8 @@ import { FacebookSDK } from "@/components/facebook-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { pagesApi, authApi, inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
-import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard } from "lucide-react";
+import { Table as TableIcon, Instagram, Sparkles, ArrowRight, X, Facebook, ExternalLink, ChevronRight, CheckCircle2, CreditCard, FolderOpen } from "lucide-react";
+import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
 
 // ── Facebook SDK types (type alias avoids global Window conflict) ───────────
 interface FBPageData { id: string; name: string; access_token: string; }
@@ -47,6 +48,7 @@ export default function OnboardingClient() {
   const [connectedPage, setConnectedPage] = useState<string | null>(null);
   const [bank, setBank] = useState({ account: "", bankName: "", holder: "" });
   const [product, setProduct] = useState({ name: "", price: "" });
+  const [sheetPickerBusy, setSheetPickerBusy] = useState(false);
   const googleReturnHandled = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,9 +79,8 @@ export default function OnboardingClient() {
     if (searchParams?.get("google") !== "connected") return;
     googleReturnHandled.current = true;
     void (async () => {
-      await botMsg("Đã kết nối Google! Hãy dán đường link (URL) trang tính Google Sheets của bạn vào đây để bắt đầu.", 400);
+      await botMsg("Đã kết nối Google! Bấm nút để chọn spreadsheet từ Drive.", 400);
       setStep("product-sheet");
-      setTimeout(() => inputRef.current?.focus(), 500);
     })();
     if (typeof window !== "undefined") {
       window.history.replaceState({}, "", window.location.pathname);
@@ -384,20 +385,28 @@ export default function OnboardingClient() {
     }
   };
 
-  const submitSheetUrl = async () => {
-    const val = input.trim();
-    if (!val) return;
-    
-    const match = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (!match) {
-      await botMsg("⚠️ Đường link không hợp lệ. Vui lòng copy link chính xác từ Google Sheets (có dạng https://docs.google.com/spreadsheets/d/...).");
-      return;
+  const openOnboardingDrivePicker = async () => {
+    setSheetPickerBusy(true);
+    try {
+      const { data: cfg } = await googleAuthApi.pickerConfig();
+      const key = cfg.developer_key?.trim();
+      if (!key) {
+        await botMsg(
+          "⚠️ Thiếu GOOGLE_PICKER_API_KEY trên server — liên hệ quản trị viên. Sau đó vào Dashboard để nhập CSV/Excel hoặc Sheets.",
+          500,
+        );
+        return;
+      }
+      const picked = await pickGoogleSpreadsheet(cfg.access_token, key);
+      if (picked?.id) {
+        userMsg(`Đã chọn: ${picked.name || picked.id}`);
+        await onSheetSelected(picked.id);
+      }
+    } catch (e: unknown) {
+      await botMsg(`❌ ${formatApiError(e)}`);
+    } finally {
+      setSheetPickerBusy(false);
     }
-    
-    const spreadsheetId = match[1];
-    setInput("");
-    userMsg(val);
-    await onSheetSelected(spreadsheetId);
   };
 
   const startSheetSync = async () => {
@@ -422,9 +431,8 @@ export default function OnboardingClient() {
           </button>
         ));
       } else {
-        await botMsg("Bạn đã kết nối Google! Hãy dán đường link (URL) trang tính Google Sheets của bạn vào đây:", 800);
+        await botMsg("Bạn đã kết nối Google! Bấm nút bên dưới để mở Google Drive và chọn file Sheets.", 800);
         setStep("product-sheet");
-        setTimeout(() => inputRef.current?.focus(), 1000);
       }
     } catch {
       await botMsg("Không kiểm tra được trạng thái Google. Thử đăng nhập lại.", 600);
@@ -535,7 +543,22 @@ export default function OnboardingClient() {
             </button>
           </div>
         );
-      case "product-sheet": return inputField("Dán link Google Sheets vào đây...", () => submitSheetUrl());
+      case "product-sheet":
+        return (
+          <button
+            type="button"
+            disabled={sheetPickerBusy}
+            onClick={() => void openOnboardingDrivePicker()}
+            className="btn-premium flex w-full max-w-lg items-center justify-center gap-2 py-4 text-sm"
+          >
+            {sheetPickerBusy ? (
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            ) : (
+              <FolderOpen className="h-5 w-5 shrink-0" />
+            )}
+            CHỌN FILE GOOGLE SHEET (DRIVE)
+          </button>
+        );
       default: return null;
     }
   };

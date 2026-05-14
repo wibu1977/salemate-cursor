@@ -20,6 +20,8 @@ logger = logging.getLogger("salemate.google_oauth")
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
+# spreadsheets.readonly: read Sheet values API. drive.metadata.readonly: list files / Google Picker.
+# For Picker, set GOOGLE_PICKER_API_KEY (Google Cloud API key). Users may need to reconnect after scope changes.
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
