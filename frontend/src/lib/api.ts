@@ -151,6 +151,19 @@ export const dashboardApi = {
     api.post(`/admin/orders/${id}/action`, { action, note }),
 };
 
+export type DuplicateStrategy = "skip" | "update" | "create_all";
+
+export type ImportJobSummaryResult = {
+  total_rows: number;
+  created: number;
+  updated: number;
+  skipped?: number;
+  errors: string[];
+  errors_total?: number | null;
+  error_csv?: string | null;
+  dry_run?: boolean | null;
+};
+
 export const inventoryApi = {
   getProducts: () => api.get("/admin/inventory/products"),
   createProduct: (data: Record<string, unknown>) =>
@@ -162,24 +175,112 @@ export const inventoryApi = {
       `/admin/inventory/google/spreadsheets/tabs`,
       { params: { spreadsheet_id: spreadsheetId } }
     ),
-  sheetPreview: (spreadsheetId: string, sheetName: string, limit: number = 10) =>
-    api.get<{ rows: unknown[][] }>(
-      `/admin/inventory/google/spreadsheets/preview`,
-      { params: { spreadsheet_id: spreadsheetId, sheet_name: sheetName, limit } }
+  sheetPreview: (
+    spreadsheetId: string,
+    sheetName: string,
+    limit: number = 10,
+    entity: string = "products"
+  ) =>
+    api.get<{
+      rows: unknown[][];
+      header_row: number;
+      data_start_row: number;
+    }>(`/admin/inventory/google/spreadsheets/preview`, {
+      params: { spreadsheet_id: spreadsheetId, sheet_name: sheetName, limit, entity },
+    }),
+  importColumnSuggest: (headers: string[], entity: string = "products") =>
+    api.post<{ suggestions: Record<string, { header: string | null; confidence: number }> }>(
+      "/admin/inventory/import/columns/suggest",
+      { headers, entity }
     ),
-  importSheets: (data: Record<string, unknown>) =>
-    api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
+  listImportTemplates: (entity?: string) =>
+    api.get<
+      {
+        id: string;
+        entity: string;
+        name: string;
+        column_mapping: Record<string, string>;
+        duplicate_strategy: string;
+      }[]
+    >("/admin/inventory/import/templates", { params: entity ? { entity } : undefined }),
+  saveImportTemplate: (body: {
+    entity?: string;
+    name?: string;
+    column_mapping: Record<string, string>;
+    duplicate_strategy?: DuplicateStrategy;
+  }) =>
+    api.post("/admin/inventory/import/templates", {
+      entity: body.entity ?? "products",
+      name: body.name ?? "default",
+      column_mapping: body.column_mapping,
+      duplicate_strategy: body.duplicate_strategy ?? "update",
+    }),
+  validateSheets: (data: {
+    spreadsheet_id: string;
+    sheet_name: string;
+    entity?: string;
+    header_row: number;
+    data_start_row: number;
+    range_a1?: string | null;
+    column_mapping?: Record<string, string>;
+    duplicate_strategy?: DuplicateStrategy;
+  }) => api.post<ImportJobSummaryResult>("/admin/inventory/import/sheets/validate", data),
+  /** Dry-run validation for uploaded grids (rows từ bước preview). Corresponds POST /admin/inventory/import/validate. */
+  validateImportGrid: (body: {
+    entity?: string;
+    rows: unknown[][];
+    header_row: number;
+    data_start_row: number;
+    column_mapping?: Record<string, string>;
+    duplicate_strategy?: DuplicateStrategy;
+  }) =>
+    api.post<ImportJobSummaryResult>("/admin/inventory/import/validate", body),
+  importSheets: (data: {
+    spreadsheet_id: string;
+    sheet_name: string;
+    entity?: string;
+    header_row?: number;
+    data_start_row?: number;
+    range_a1?: string | null;
+    column_mapping?: Record<string, string>;
+    duplicate_strategy?: DuplicateStrategy;
+  }) => api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
+  importFilePreview: (file: File, maxRows: number = 50, entity: string = "products") => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("max_rows", String(maxRows));
+    fd.append("entity", entity);
+    return api.post<{
+      rows: unknown[][];
+      header_row: number;
+      data_start_row: number;
+    }>("/admin/inventory/import/file/preview", fd);
+  },
+  importFile: (params: {
+    file: File;
+    entity?: string;
+    header_row: number;
+    data_start_row: number;
+    column_mapping?: Record<string, string>;
+    duplicate_strategy?: DuplicateStrategy;
+  }) => {
+    const fd = new FormData();
+    fd.append("file", params.file);
+    fd.append("entity", params.entity ?? "products");
+    fd.append("header_row", String(params.header_row));
+    fd.append("data_start_row", String(params.data_start_row));
+    if (params.column_mapping && Object.keys(params.column_mapping).length) {
+      fd.append("column_mapping", JSON.stringify(params.column_mapping));
+    }
+    fd.append("duplicate_strategy", params.duplicate_strategy ?? "update");
+    return api.post<{ job_id: string }>("/admin/inventory/import/file", fd);
+  },
   importJob: (jobId: string) =>
     api.get<{
       id: string;
       status: string;
       progress_percent: number;
-      result: {
-        total_rows: number;
-        created: number;
-        updated: number;
-        errors: string[];
-      } | null;
+      result: ImportJobSummaryResult | null;
       error_message: string | null;
     }>(`/admin/inventory/import/jobs/${jobId}`),
 };
@@ -208,12 +309,7 @@ export async function pollImportJob(
   id: string;
   status: string;
   progress_percent: number;
-  result: {
-    total_rows: number;
-    created: number;
-    updated: number;
-    errors: string[];
-  } | null;
+  result: ImportJobSummaryResult | null;
   error_message: string | null;
 }> {
   const intervalMs = options?.intervalMs ?? 600;

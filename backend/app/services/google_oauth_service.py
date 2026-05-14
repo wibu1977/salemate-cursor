@@ -96,8 +96,14 @@ async def exchange_code_and_store(
         )
         if r.status_code >= 400:
             logger.warning("Google token exchange failed: %s %s", r.status_code, r.text)
-            r.raise_for_status()
-        data = r.json()
+            raise ValueError(
+                "Không đổi được mã Google OAuth. Kiểm tra Client ID/Secret và Redirect URI, "
+                "rồi kết nối lại Google."
+            ) from None
+        try:
+            data = r.json()
+        except ValueError as e:
+            raise ValueError("Google trả phản hồi token không hợp lệ.") from e
 
     access = data.get("access_token")
     refresh = data.get("refresh_token")
@@ -140,8 +146,13 @@ async def refresh_access_token(db: AsyncSession, workspace: Workspace) -> str:
         )
         if r.status_code >= 400:
             logger.warning("Google refresh failed: %s %s", r.status_code, r.text)
-            r.raise_for_status()
-        data = r.json()
+            raise ValueError(
+                "Phiên Google đã hết hạn hoặc bị thu hồi. Vui lòng ngắt kết nối và kết nối lại Google trên dashboard."
+            ) from None
+        try:
+            data = r.json()
+        except ValueError as e:
+            raise ValueError("Google trả phản hồi làm mới token không hợp lệ.") from e
 
     access = data.get("access_token")
     if not access:

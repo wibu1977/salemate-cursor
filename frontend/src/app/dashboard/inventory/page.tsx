@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inventoryApi, googleAuthApi, pollImportJob, formatApiError } from "@/lib/api";
+import { inventoryApi, googleAuthApi, pollImportJob, formatApiError, type DuplicateStrategy } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { Modal } from "@/components/ui/modal";
@@ -51,10 +51,29 @@ export default function InventoryPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editProduct, setEditProduct] = useState<ProductData | null>(null);
   const [showSync, setShowSync] = useState(false);
+  const [importSource, setImportSource] = useState<"sheets" | "upload">("sheets");
   const [sheetId, setSheetId] = useState("");
   const [sheetName, setSheetName] = useState("Sheet1");
-  const [importStep, setImportStep] = useState(0); // 0: Select, 1: Map, 2: Progress
+  const [importStep, setImportStep] = useState(0);
+  const [headerRow, setHeaderRow] = useState(1);
+  const [dataStartRow, setDataStartRow] = useState(2);
+  const [duplicateStrategy, setDuplicateStrategy] = useState<DuplicateStrategy>("update");
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [filePreviewData, setFilePreviewData] = useState<{
+    rows: unknown[][];
+    header_row: number;
+    data_start_row: number;
+  } | null>(null);
+  const [uploadFileName, setUploadFileName] = useState<string | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [validateSummary, setValidateSummary] = useState<{
+    total_rows: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: string[];
+    errors_total: number | null;
+  } | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -96,15 +115,43 @@ export default function InventoryPage() {
     error: previewError,
     refetch: refetchPreview,
   } = useQuery({
-    queryKey: ["sheet-preview", sheetIdNormalized, sheetName],
-    queryFn: () => inventoryApi.sheetPreview(sheetIdNormalized, sheetName).then((r) => r.data),
-    enabled: !!googleStatus?.connected && !!sheetIdNormalized && !!sheetName && importStep === 1,
+    queryKey: ["sheet-preview", sheetIdNormalized, sheetName, importSource],
+    queryFn: () =>
+      inventoryApi.sheetPreview(sheetIdNormalized, sheetName, 10, "products").then((r) => r.data),
+    enabled:
+      importSource === "sheets" &&
+      !!googleStatus?.connected &&
+      !!sheetIdNormalized &&
+      !!sheetName &&
+      importStep === 1,
   });
 
+  const filePreviewMutation = useMutation({
+    mutationFn: (file: File) =>
+      inventoryApi.importFilePreview(file, 50, "products").then((r) => r.data),
+    onSuccess: (data) => {
+      setFilePreviewData(data);
+      setHeaderRow(data.header_row);
+      setDataStartRow(data.data_start_row);
+      setValidateSummary(null);
+      setImportStep(1);
+    },
+    onError: (e: unknown) => toast(formatApiError(e), "error"),
+  });
+
+  const activePreview =
+    importSource === "sheets" ? previewData : filePreviewData;
+  const isLoadingActivePreview =
+    importSource === "sheets" ? isLoadingPreview : filePreviewMutation.isPending;
+  const isActivePreviewError =
+    importSource === "sheets" ? isPreviewError : filePreviewMutation.isError;
+  const activePreviewError =
+    importSource === "sheets" ? previewError : filePreviewMutation.error;
+
   const previewHeaders = useMemo(() => {
-    if (!previewData?.rows?.length) return [];
-    return previewData.rows[0].map((h: unknown) => String(h ?? ""));
-  }, [previewData]);
+    if (!activePreview?.rows?.length) return [];
+    return activePreview.rows[0].map((h: unknown) => String(h ?? ""));
+  }, [activePreview]);
 
   useEffect(() => {
     if (tabData?.titles?.length && !tabData.titles.includes(sheetName)) {
@@ -112,36 +159,63 @@ export default function InventoryPage() {
     }
   }, [tabData, sheetName]);
 
-  // Auto-guess mapping when headers load or sheet changes
   useEffect(() => {
-    if (previewHeaders.length > 0) {
-      const mapping: Record<string, string> = { ...columnMapping };
+    if (importSource === "sheets" && previewData?.header_row != null) {
+      setHeaderRow(previewData.header_row);
+      setDataStartRow(previewData.data_start_row);
+    }
+  }, [importSource, previewData]);
+
+  const previewHeaderKey = previewHeaders.join("|");
+
+  useEffect(() => {
+    if (!previewHeaders.length) return;
+    let cancelled = false;
+    inventoryApi
+      .importColumnSuggest(previewHeaders, "products")
+      .then(({ data }) => {
+        if (cancelled) return;
+        setColumnMapping((prev) => {
+          const next = { ...prev };
+          for (const [k, v] of Object.entries(data.suggestions)) {
+            if (v.header && v.confidence >= 0.65 && !next[k]) {
+              next[k] = v.header;
+            }
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [previewHeaderKey]);
+
+  useEffect(() => {
+    if (!previewHeaders.length) return;
+    setColumnMapping((mapping) => {
+      const next = { ...mapping };
       const fields = [
         { key: "name", patterns: [/name/i, /tên/i, /product/i, /sản phẩm/i, /hàng/i] },
         { key: "price", patterns: [/price/i, /giá/i, /cost/i, /bán/i] },
         { key: "quantity", patterns: [/qty/i, /số lượng/i, /quantity/i, /stock/i, /tồn/i] },
         { key: "stock_threshold", patterns: [/threshold/i, /ngưỡng/i, /cảnh báo/i] },
         { key: "description", patterns: [/desc/i, /mô tả/i, /chi tiết/i, /note/i] },
-        { key: "image_url", patterns: [/image/i, /ảnh/i, /hình/i, /url/i, /link/i, /pic/i] },
+        { key: "category", patterns: [/categor/i, /danh mục/i, /loại/i, /nhóm/i] },
       ];
-
       let changed = false;
-      fields.forEach(f => {
-        // Only auto-map if not already mapped or if it's currently empty
-        if (!mapping[f.key]) {
-          const found = previewHeaders.find(h => f.patterns.some(p => p.test(h)));
+      for (const f of fields) {
+        if (!next[f.key]) {
+          const found = previewHeaders.find((h) => f.patterns.some((p) => p.test(h)));
           if (found) {
-            mapping[f.key] = found;
+            next[f.key] = found;
             changed = true;
           }
         }
-      });
-
-      if (changed) {
-        setColumnMapping(mapping);
       }
-    }
-  }, [previewHeaders, sheetName, columnMapping]);
+      return changed ? next : mapping;
+    });
+  }, [previewHeaderKey, sheetName, importSource]);
 
   const connectGoogle = () => {
     const next =
@@ -200,15 +274,56 @@ export default function InventoryPage() {
     onError: () => toast("Cập nhật thất bại", "error"),
   });
 
+  const validateImportMutation = useMutation({
+    mutationFn: async () => {
+      if (importSource === "sheets") {
+        const { data } = await inventoryApi.validateSheets({
+          spreadsheet_id: sheetIdNormalized,
+          sheet_name: sheetName,
+          entity: "products",
+          header_row: headerRow,
+          data_start_row: dataStartRow,
+          column_mapping: columnMapping,
+          duplicate_strategy: duplicateStrategy,
+        });
+        return data;
+      }
+      if (!filePreviewData?.rows?.length)
+        throw new Error("Chưa có dữ liệu xem trước — chọn và tải file lại.");
+      const { data } = await inventoryApi.validateImportGrid({
+        entity: "products",
+        rows: filePreviewData.rows as unknown[][],
+        header_row: headerRow,
+        data_start_row: dataStartRow,
+        column_mapping: columnMapping,
+        duplicate_strategy: duplicateStrategy,
+      });
+      return data;
+    },
+    onSuccess: (data) => {
+      setValidateSummary({
+        total_rows: data.total_rows,
+        created: data.created,
+        updated: data.updated,
+        skipped: data.skipped ?? 0,
+        errors: data.errors ?? [],
+        errors_total: data.errors_total ?? data.errors?.length ?? 0,
+      });
+      toast("Kiểm tra thử (dry-run) xong — chưa ghi DB.", "success");
+    },
+    onError: (e: unknown) => toast(formatApiError(e), "error"),
+  });
+
   const importSheetsMutation = useMutation({
     mutationFn: async () => {
       const { data: start } = await inventoryApi.importSheets({
         spreadsheet_id: sheetIdNormalized,
         sheet_name: sheetName,
         entity: "products",
-        header_row: 1,
-        data_start_row: 2,
+        header_row: headerRow,
+        data_start_row: dataStartRow,
         column_mapping: columnMapping,
+        duplicate_strategy: duplicateStrategy,
       });
       return pollImportJob(String(start.job_id));
     },
@@ -220,8 +335,8 @@ export default function InventoryPage() {
       }
       const d = job.result;
       toast(
-        `Đồng bộ xong: ${d?.created ?? 0} mới, ${d?.updated ?? 0} cập nhật` +
-          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi)` : ""),
+        `Đồng bộ xong: ${d?.created ?? 0} mới, ${d?.updated ?? 0} cập nhật, ${d?.skipped ?? 0} bỏ qua` +
+          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi mẫu)` : ""),
         "success"
       );
       queryClient.invalidateQueries({ queryKey: ["products"] });
@@ -229,6 +344,43 @@ export default function InventoryPage() {
       setSheetId("");
       setImportStep(0);
       setColumnMapping({});
+      setFilePreviewData(null);
+      setUploadFileName(null);
+      setValidateSummary(null);
+    },
+    onError: (e: unknown) => toast(formatApiError(e), "error"),
+  });
+
+  const importFileMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const { data: start } = await inventoryApi.importFile({
+        file,
+        entity: "products",
+        header_row: headerRow,
+        data_start_row: dataStartRow,
+        column_mapping: columnMapping,
+        duplicate_strategy: duplicateStrategy,
+      });
+      return pollImportJob(String(start.job_id));
+    },
+    onSuccess: (job) => {
+      if (job.status === "failed") {
+        toast(job.error_message || "Import file thất bại", "error");
+        return;
+      }
+      const d = job.result;
+      toast(
+        `Nhập file xong: ${d?.created ?? 0} mới, ${d?.updated ?? 0} cập nhật, ${d?.skipped ?? 0} bỏ qua` +
+          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi mẫu)` : ""),
+        "success"
+      );
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setShowSync(false);
+      setImportStep(0);
+      setColumnMapping({});
+      setFilePreviewData(null);
+      setUploadFileName(null);
+      setValidateSummary(null);
     },
     onError: (e: unknown) => toast(formatApiError(e), "error"),
   });
@@ -264,7 +416,7 @@ export default function InventoryPage() {
             onClick={() => setShowSync(!showSync)} 
             className="group flex items-center gap-3 rounded-2xl bg-white px-6 py-3.5 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 hover:ring-accent/25 active:scale-95"
           >
-            <RefreshCw className={`h-5 w-5 text-accent group-hover:rotate-180 transition-transform duration-500 ${importSheetsMutation.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-5 w-5 text-accent group-hover:rotate-180 transition-transform duration-500 ${importSheetsMutation.isPending || importFileMutation.isPending ? 'animate-spin' : ''}`} />
             ĐỒNG BỘ SHEETS
           </button>
           <button 
@@ -282,6 +434,46 @@ export default function InventoryPage() {
         <div className="ai-glow relative overflow-hidden rounded-[2.5rem] border border-accent-soft bg-white p-8 shadow-2xl shadow-accent/15/50 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent-soft/50 blur-3xl" />
           <div className="relative flex flex-col gap-8">
+            <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-100/80 p-1.5 ring-1 ring-slate-200/60">
+              <button
+                type="button"
+                onClick={() => {
+                  setImportSource("sheets");
+                  setImportStep(0);
+                  setFilePreviewData(null);
+                  setUploadFile(null);
+                  setUploadFileName(null);
+                  setValidateSummary(null);
+                }}
+                className={`rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
+                  importSource === "sheets"
+                    ? "bg-white text-accent shadow-sm ring-1 ring-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Google Sheets
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportSource("upload");
+                  setImportStep(0);
+                  setFilePreviewData(null);
+                  setUploadFile(null);
+                  setUploadFileName(null);
+                  setValidateSummary(null);
+                  setSheetId("");
+                }}
+                className={`rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
+                  importSource === "upload"
+                    ? "bg-white text-accent shadow-sm ring-1 ring-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Tải file (CSV / Excel)
+              </button>
+            </div>
+
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex-1 space-y-4">
                 <div className="flex items-center gap-3">
@@ -289,9 +481,13 @@ export default function InventoryPage() {
                     <TableIcon className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">Google Sheets (OAuth)</h3>
+                    <h3 className="text-lg font-black text-slate-900">
+                      {importSource === "sheets" ? "Google Sheets (OAuth)" : "Upload file"}
+                    </h3>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                      Kết nối Google → nhập Spreadsheet ID hoặc link → chọn tab
+                      {importSource === "sheets"
+                        ? "Kết nối Google → nhập Spreadsheet ID hoặc link → chọn tab"
+                        : "Chọn .csv, .xlsx hoặc .xls — cùng bước ánh xạ như Sheets"}
                     </p>
                   </div>
                 </div>
@@ -310,7 +506,7 @@ export default function InventoryPage() {
                     KẾT NỐI GOOGLE
                   </button>
                 )}
-                {googleStatus?.connected && (
+                {importSource === "sheets" && googleStatus?.connected && (
                   <div className="flex flex-col gap-6">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                       <div className="relative w-full max-w-lg">
@@ -400,183 +596,405 @@ export default function InventoryPage() {
                       )
                     ) : null}
 
-                    {importStep === 1 && (
-                      <div className="space-y-8 rounded-[2.5rem] bg-slate-50/50 p-8 ring-1 ring-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex items-center justify-between">
+                  </div>
+                )}
+
+                {importSource === "upload" && (
+                  <div className="mt-2 space-y-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      File nguồn (.csv, .xlsx, .xls)
+                    </label>
+                    <input
+                      type="file"
+                      accept=".csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                      className="block w-full text-xs font-semibold file:mr-4 file:rounded-xl file:border-0 file:bg-accent file:px-4 file:py-2 file:font-black file:text-white"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        setUploadFile(f);
+                        setUploadFileName(f.name);
+                        setValidateSummary(null);
+                        filePreviewMutation.mutate(f);
+                      }}
+                    />
+                    {uploadFileName ? (
+                      <p className="text-xs font-bold text-slate-600">Đã chọn: {uploadFileName}</p>
+                    ) : (
+                      <p className="text-xs text-slate-400">Chọn file để xem trước và ánh xạ cột.</p>
+                    )}
+                  </div>
+                )}
+
+                {importStep === 1 &&
+                  ((importSource === "sheets" && !!googleStatus?.connected) ||
+                    (importSource === "upload" && !!filePreviewData)) && (
+                  <div className="space-y-8 rounded-[2.5rem] bg-slate-50/50 p-8 ring-1 ring-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          Dòng tiêu đề (1-based)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={headerRow}
+                          onChange={(e) => setHeaderRow(Number(e.target.value) || 1)}
+                          className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          Dòng dữ liệu đầu
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={dataStartRow}
+                          onChange={(e) => setDataStartRow(Number(e.target.value) || 2)}
+                          className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                        />
+                      </div>
+                      <div className="min-w-[200px] flex-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          Trùng lặp (sản phẩm theo tên)
+                        </label>
+                        <select
+                          value={duplicateStrategy}
+                          onChange={(e) =>
+                            setDuplicateStrategy(e.target.value as DuplicateStrategy)
+                          }
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-black"
+                        >
+                          <option value="update">Cập nhật bản ghi trùng</option>
+                          <option value="skip">Bỏ qua dòng trùng</option>
+                          <option value="create_all">Luôn tạo mới</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-accent" />
+                          Ánh xạ cột dữ liệu
+                        </h4>
+                        <p className="text-[10px] font-bold text-slate-400">
+                          Chọn cột tương ứng từ file của bạn
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            inventoryApi
+                              .saveImportTemplate({
+                                entity: "products",
+                                name: "default",
+                                column_mapping: columnMapping,
+                              })
+                              .then(() => toast("Đã lưu mẫu ánh xạ (default).", "success"))
+                              .catch((e: unknown) => toast(formatApiError(e), "error"))
+                          }
+                          className="rounded-xl bg-white px-3 py-2 text-[10px] font-black text-slate-600 ring-1 ring-slate-200"
+                        >
+                          Lưu mẫu
+                        </button>
+                        <button
+                          onClick={() => setImportStep(0)}
+                          className="group flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[10px] font-black text-slate-500 shadow-sm ring-1 ring-slate-100 transition-all hover:bg-slate-50 hover:text-accent"
+                        >
+                          QUAY LẠI
+                        </button>
+                      </div>
+                    </div>
+
+                    {isLoadingActivePreview ? (
+                      <div className="flex flex-col items-center justify-center py-20 gap-4">
+                        <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent-soft border-t-accent" />
+                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                          Đang phân tích dữ liệu...
+                        </p>
+                      </div>
+                    ) : isActivePreviewError ? (
+                      <div className="space-y-4 rounded-2xl bg-rose-50 p-6 ring-1 ring-rose-100">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
                           <div className="space-y-1">
-                            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                              <Sparkles className="h-4 w-4 text-accent" />
-                              Ánh xạ cột dữ liệu
-                            </h4>
-                            <p className="text-[10px] font-bold text-slate-400">Chọn cột tương ứng từ file của bạn</p>
+                            <p className="text-sm font-black text-rose-900">Không tải được xem trước</p>
+                            <p className="text-xs font-medium text-rose-800/90">
+                              {formatApiError(activePreviewError)}
+                            </p>
                           </div>
-                          <button 
-                            onClick={() => setImportStep(0)} 
-                            className="group flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-[10px] font-black text-slate-500 shadow-sm ring-1 ring-slate-100 transition-all hover:bg-slate-50 hover:text-accent"
-                          >
-                            QUAY LẠI
-                          </button>
                         </div>
-                        
-                        {isLoadingPreview ? (
-                          <div className="flex flex-col items-center justify-center py-20 gap-4">
-                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-accent-soft border-t-accent" />
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Đang phân tích dữ liệu...</p>
+                        {importSource === "sheets" && (
+                          <button
+                            type="button"
+                            onClick={() => void refetchPreview()}
+                            className="rounded-xl bg-rose-900 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-rose-950"
+                          >
+                            Thử lại
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-8">
+                        <div className="space-y-10">
+                          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                            {[
+                              {
+                                key: "name",
+                                label: "Tên sản phẩm",
+                                required: true,
+                                icon: <Box className="h-4 w-4" />,
+                                description: "Dùng để nhận diện và cập nhật sản phẩm",
+                              },
+                              {
+                                key: "price",
+                                label: "Giá bán",
+                                icon: <DollarSign className="h-4 w-4" />,
+                                description: "Tiền tệ — hỗ trợ phân tách . ,",
+                              },
+                              {
+                                key: "quantity",
+                                label: "Số lượng",
+                                icon: <Layers className="h-4 w-4" />,
+                                description: "Tồn kho hiện tại",
+                              },
+                              {
+                                key: "stock_threshold",
+                                label: "Ngưỡng cảnh báo",
+                                icon: <AlertCircle className="h-4 w-4" />,
+                                description: "Báo động khi tồn thấp",
+                              },
+                              {
+                                key: "description",
+                                label: "Mô tả",
+                                icon: <ImageIcon className="h-4 w-4" />,
+                                description: "Chi tiết sản phẩm",
+                              },
+                              {
+                                key: "image_url",
+                                label: "Ảnh (URL)",
+                                icon: <ImageIcon className="h-4 w-4" />,
+                                description: "URL hình công khai",
+                              },
+                              {
+                                key: "category",
+                                label: "Danh mục",
+                                icon: <Layers className="h-4 w-4" />,
+                                description: "Phân loại / nhóm hàng",
+                              },
+                            ].map((field) => {
+                              const mappedCol = columnMapping[field.key];
+                              const colIndex = previewHeaders.indexOf(mappedCol);
+                              const sampleValue =
+                                colIndex !== -1 && activePreview?.rows?.[1]?.[colIndex];
+
+                              return (
+                                <div
+                                  key={field.key}
+                                  className="group relative space-y-3 rounded-3xl bg-white p-5 ring-1 ring-slate-100 transition-all hover:ring-accent/30 hover:shadow-xl hover:shadow-accent/5"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-accent-soft group-hover:text-accent transition-colors">
+                                        {field.icon}
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+                                          {field.label}{" "}
+                                          {field.required && <span className="text-rose-500">*</span>}
+                                        </label>
+                                        <p className="text-[9px] font-bold text-slate-400">
+                                          {field.description}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    {mappedCol && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <select
+                                      value={mappedCol || ""}
+                                      onChange={(e) =>
+                                        setColumnMapping({
+                                          ...columnMapping,
+                                          [field.key]: e.target.value,
+                                        })
+                                      }
+                                      className="w-full rounded-xl border-none bg-slate-50 px-4 py-3 text-xs font-bold shadow-inner transition-all focus:ring-2 focus:ring-accent outline-none appearance-none hover:bg-slate-100 cursor-pointer"
+                                      style={{
+                                        backgroundImage:
+                                          'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
+                                        backgroundRepeat: "no-repeat",
+                                        backgroundPosition: "right 1rem center",
+                                        backgroundSize: "0.8rem",
+                                      }}
+                                    >
+                                      <option value="">-- Bỏ qua trường này --</option>
+                                      {previewHeaders.map((h, i) => (
+                                        <option key={i} value={h}>
+                                          {h}
+                                        </option>
+                                      ))}
+                                    </select>
+
+                                    {mappedCol && sampleValue !== undefined && (
+                                      <div className="flex items-center gap-2 px-1">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                                          Giá trị mẫu:
+                                        </span>
+                                        <span className="text-[9px] font-bold text-accent truncate max-w-[150px]">
+                                          {String(sampleValue || "(Trống)")}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ) : isPreviewError ? (
-                          <div className="space-y-4 rounded-2xl bg-rose-50 p-6 ring-1 ring-rose-100">
-                            <div className="flex items-start gap-3">
-                              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
-                              <div className="space-y-1">
-                                <p className="text-sm font-black text-rose-900">Không tải được dữ liệu xem trước sheet</p>
-                                <p className="text-xs font-medium text-rose-800/90">{formatApiError(previewError)}</p>
-                              </div>
-                            </div>
+
+                          <div className="flex justify-center">
                             <button
-                              type="button"
-                              onClick={() => void refetchPreview()}
-                              className="rounded-xl bg-rose-900 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-rose-950"
+                              onClick={() => setColumnMapping({})}
+                              className="flex items-center gap-2 text-[10px] font-black text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
                             >
-                              Thử lại
+                              <RefreshCw className="h-3 w-3" />
+                              Xóa tất cả ánh xạ
                             </button>
                           </div>
-                        ) : (
-                          <div className="space-y-8">
-                          <div className="space-y-10">
-                            <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-                              {[
-                                { key: "name", label: "Tên sản phẩm", required: true, icon: <Box className="h-4 w-4" />, description: "Dùng để nhận diện và cập nhật sản phẩm" },
-                                { key: "price", label: "Giá bán", icon: <DollarSign className="h-4 w-4" />, description: "Đơn vị: VNĐ" },
-                                { key: "quantity", label: "Số lượng", icon: <Layers className="h-4 w-4" />, description: "Số lượng tồn kho hiện tại" },
-                                { key: "stock_threshold", label: "Ngưỡng cảnh báo", icon: <AlertCircle className="h-4 w-4" />, description: "Báo động khi tồn dưới mức này" },
-                                { key: "description", label: "Mô tả", icon: <ImageIcon className="h-4 w-4" />, description: "Thông tin chi tiết sản phẩm" },
-                                { key: "image_url", label: "Ảnh (URL)", icon: <ImageIcon className="h-4 w-4" />, description: "Đường dẫn hình ảnh công khai" },
-                              ].map((field) => {
-                                const mappedCol = columnMapping[field.key];
-                                const colIndex = previewHeaders.indexOf(mappedCol);
-                                const sampleValue = colIndex !== -1 && previewData?.rows?.[1]?.[colIndex];
 
-                                return (
-                                  <div key={field.key} className="group relative space-y-3 rounded-3xl bg-white p-5 ring-1 ring-slate-100 transition-all hover:ring-accent/30 hover:shadow-xl hover:shadow-accent/5">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2.5">
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-400 group-hover:bg-accent-soft group-hover:text-accent transition-colors">
-                                          {field.icon}
-                                        </div>
-                                        <div>
-                                          <label className="text-[11px] font-black uppercase tracking-widest text-slate-700">
-                                            {field.label} {field.required && <span className="text-rose-500">*</span>}
-                                          </label>
-                                          <p className="text-[9px] font-bold text-slate-400">{field.description}</p>
-                                        </div>
-                                      </div>
-                                      {mappedCol && (
-                                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                      )}
-                                    </div>
-
-                                    <div className="space-y-2">
-                                      <select
-                                        value={mappedCol || ""}
-                                        onChange={(e) => setColumnMapping({ ...columnMapping, [field.key]: e.target.value })}
-                                        className="w-full rounded-xl border-none bg-slate-50 px-4 py-3 text-xs font-bold shadow-inner transition-all focus:ring-2 focus:ring-accent outline-none appearance-none hover:bg-slate-100 cursor-pointer"
-                                        style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', backgroundSize: '0.8rem' }}
-                                      >
-                                        <option value="">-- Bỏ qua trường này --</option>
-                                        {previewHeaders.map((h, i) => (
-                                          <option key={i} value={h}>{h}</option>
-                                        ))}
-                                      </select>
-                                      
-                                      {mappedCol && sampleValue !== undefined && (
-                                        <div className="flex items-center gap-2 px-1">
-                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Giá trị mẫu:</span>
-                                          <span className="text-[9px] font-bold text-accent truncate max-w-[150px]">
-                                            {String(sampleValue || "(Trống)")}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Control Actions */}
-                            <div className="flex justify-center">
-                              <button 
-                                onClick={() => setColumnMapping({})}
-                                className="flex items-center gap-2 text-[10px] font-black text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
-                              >
-                                <RefreshCw className="h-3 w-3" />
-                                Xóa tất cả ánh xạ
-                              </button>
-                            </div>
-
-                            {/* Data Preview Table */}
-                            {previewData?.rows && previewData.rows.length > 1 && (
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between px-1">
-                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dữ liệu nguồn thực tế</h5>
-                                  <span className="text-[9px] font-bold text-slate-300">Đang hiển thị 5 dòng đầu</span>
-                                </div>
-                                <div className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm ring-1 ring-slate-200/50">
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-[10px] font-bold">
-                                      <thead>
-                                        <tr className="border-b border-slate-50 bg-slate-50/50">
-                                          {previewHeaders.map((h, i) => {
-                                            const isMapped = Object.values(columnMapping).includes(h);
+                          {activePreview?.rows && activePreview.rows.length > 1 && (
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between px-1">
+                                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                  Dữ liệu nguồn thực tế
+                                </h5>
+                                <span className="text-[9px] font-bold text-slate-300">
+                                  Đang hiển thị 5 dòng đầu
+                                </span>
+                              </div>
+                              <div className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm ring-1 ring-slate-200/50">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-[10px] font-bold">
+                                    <thead>
+                                      <tr className="border-b border-slate-50 bg-slate-50/50">
+                                        {previewHeaders.map((h, i) => {
+                                          const isMapped = Object.values(columnMapping).includes(
+                                            h
+                                          );
+                                          return (
+                                            <th
+                                              key={i}
+                                              className={`whitespace-nowrap px-6 py-4 transition-colors ${
+                                                isMapped
+                                                  ? "bg-accent/5 text-accent"
+                                                  : "text-slate-400"
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2">
+                                                {isMapped && <CheckCircle2 className="h-3 w-3" />}
+                                                {h}
+                                              </div>
+                                            </th>
+                                          );
+                                        })}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                      {activePreview.rows.slice(1, 6).map((row: unknown[], i: number) => (
+                                        <tr key={i} className="hover:bg-slate-50/30 transition-colors">
+                                          {row.map((cell, j) => {
+                                            const isMapped = Object.values(columnMapping).includes(
+                                              previewHeaders[j]
+                                            );
                                             return (
-                                              <th key={i} className={`whitespace-nowrap px-6 py-4 transition-colors ${isMapped ? 'bg-accent/5 text-accent' : 'text-slate-400'}`}>
-                                                <div className="flex items-center gap-2">
-                                                  {isMapped && <CheckCircle2 className="h-3 w-3" />}
-                                                  {h}
-                                                </div>
-                                              </th>
+                                              <td
+                                                key={j}
+                                                className={`whitespace-nowrap px-6 py-4 transition-colors ${
+                                                  isMapped
+                                                    ? "bg-accent/[0.02] text-slate-900"
+                                                    : "text-slate-500 font-medium"
+                                                }`}
+                                              >
+                                                {String(cell || "")}
+                                              </td>
                                             );
                                           })}
                                         </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-50">
-                                        {previewData.rows.slice(1, 6).map((row: unknown[], i: number) => (
-                                          <tr key={i} className="hover:bg-slate-50/30 transition-colors">
-                                            {row.map((cell, j) => {
-                                              const isMapped = Object.values(columnMapping).includes(previewHeaders[j]);
-                                              return (
-                                                <td key={j} className={`whitespace-nowrap px-6 py-4 transition-colors ${isMapped ? 'bg-accent/[0.02] text-slate-900' : 'text-slate-500 font-medium'}`}>
-                                                  {String(cell || "")}
-                                                </td>
-                                              );
-                                            })}
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
-                            )}
-                          </div>
-                          </div>
-                        )}
-
-                        <div className="pt-4">
-                          <button
-                            onClick={() => importSheetsMutation.mutate()}
-                            disabled={importSheetsMutation.isPending || !columnMapping.name && !previewHeaders.some(h => /name|tên|product/i.test(h))}
-                            className="ai-glow w-full rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
-                          >
-                            {importSheetsMutation.isPending ? (
-                              <div className="flex items-center justify-center gap-3">
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                ĐANG ĐỒNG BỘ...
-                              </div>
-                            ) : "BẮT ĐẦU NHẬP DỮ LIỆU"}
-                          </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
+
+                    {validateSummary && (
+                      <div className="rounded-2xl bg-emerald-50/50 p-4 ring-1 ring-emerald-100">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800">
+                          Kết quả kiểm tra (dry-run)
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-slate-700">
+                          Tạo: {validateSummary.created} · Cập nhật: {validateSummary.updated} · Bỏ qua:{" "}
+                          {validateSummary.skipped} · Dòng lỗi:{" "}
+                          {validateSummary.errors_total ?? validateSummary.errors.length}
+                        </p>
+                        {validateSummary.errors.length > 0 && (
+                          <ul className="mt-2 max-h-28 list-inside list-disc overflow-y-auto text-[10px] text-rose-700">
+                            {validateSummary.errors.slice(0, 8).map((e, i) => (
+                              <li key={i}>{e}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-3 pt-4 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => validateImportMutation.mutate()}
+                        disabled={validateImportMutation.isPending}
+                        className="flex-1 rounded-2xl border-2 border-slate-200 bg-white py-4 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {validateImportMutation.isPending ? "Đang kiểm tra..." : "KIỂM TRA (DRY-RUN)"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (importSource === "upload") {
+                            if (!uploadFile) {
+                              toast("Chưa có file.", "error");
+                              return;
+                            }
+                            importFileMutation.mutate(uploadFile);
+                          } else {
+                            importSheetsMutation.mutate();
+                          }
+                        }}
+                        disabled={
+                          importSheetsMutation.isPending ||
+                          importFileMutation.isPending ||
+                          (!columnMapping.name &&
+                            !previewHeaders.some((h) => /name|tên|product/i.test(h)))
+                        }
+                        className="ai-glow flex-[2] rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
+                      >
+                        {importSheetsMutation.isPending || importFileMutation.isPending ? (
+                          <div className="flex items-center justify-center gap-3">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                            ĐANG CHẠY...
+                          </div>
+                        ) : importSource === "upload" ? (
+                          "NHẬP TỪ FILE"
+                        ) : (
+                          "BẮT ĐẦU NHẬP DỮ LIỆU"
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

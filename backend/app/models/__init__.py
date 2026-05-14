@@ -8,6 +8,7 @@ from app.models.campaign import Campaign, CampaignMessage
 from app.models.fraud_log import FraudLog
 from app.models.conversation import Conversation
 from app.models.import_job import ImportJob, ImportJobStatus
+from app.models.import_template import ImportTemplate
 
 __all__ = [
     "CustomerSegment",
@@ -24,4 +25,5 @@ __all__ = [
     "Conversation",
     "ImportJob",
     "ImportJobStatus",
+    "ImportTemplate",
 ]

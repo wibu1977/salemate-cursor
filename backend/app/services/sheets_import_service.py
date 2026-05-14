@@ -1,20 +1,22 @@
-"""Đọc Google Sheets (OAuth) và import sản phẩm / khách hàng — validation + upsert."""
+"""Đọc Google Sheets (OAuth) / file CSV-Excel và import sản phẩm / khách hàng — validation + upsert + dry-run."""
 
 from __future__ import annotations
 
+import asyncio
+import csv
+import io
 import logging
 import re
 import uuid
-from typing import Any
+from difflib import SequenceMatcher
+from typing import Any, Literal
 
-import asyncio
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.models.customer import Customer
 from app.models.inventory import Product
 from app.models.workspace import Workspace
@@ -22,6 +24,8 @@ from app.services.google_oauth_service import ensure_valid_access_token
 from app.services.notification_service import NotificationService
 
 logger = logging.getLogger("salemate.sheets_import")
+
+DuplicateStrategy = Literal["skip", "update", "create_all"]
 
 # Khớp tiêu đề cột (không phân biệt hoa thường, có dấu / không dấu đơn giản)
 NAME_KEYS = (
@@ -33,14 +37,56 @@ NAME_KEYS = (
     "san pham",
     "tên sản phẩm",
 )
+FIRST_NAME_KEYS = (
+    "first_name",
+    "first name",
+    "given name",
+    "tên riêng",
+    "ten rieng",
+    "tên",
+    "ten",
+)
+LAST_NAME_KEYS = (
+    "last_name",
+    "last name",
+    "surname",
+    "family name",
+    "họ",
+    "ho",
+    "đệm",
+    "dem",
+)
 PRICE_KEYS = ("price", "giá", "gia", "gia ban")
 QTY_KEYS = ("quantity", "số lượng", "so luong", "stock", "ton", "tồn")
 THRESHOLD_KEYS = ("threshold", "ngưỡng", "nguong", "stock_threshold")
 DESC_KEYS = ("description", "mô tả", "mo ta")
 IMAGE_KEYS = ("image", "ảnh", "anh", "image_url", "hình", "hinh")
+CATEGORY_KEYS = ("category", "danh mục", "danh muc", "loại", "loai", "nhóm", "nhom", "type")
+CATEGORY_KEYS = ("category", "danh mục", "danh muc", "type", "loại", "loai", "nhóm", "nhom")
 PHONE_KEYS = ("phone", "sđt", "sdt", "tel", "mobile", "điện thoại", "dien thoai")
 EMAIL_KEYS = ("email", "e-mail", "mail")
 NOTE_KEYS = ("note", "ghi chú", "ghichu", "ghi chu", "comments")
+
+PRODUCT_FIELD_SPECS: dict[str, tuple[str, ...]] = {
+    "name": NAME_KEYS,
+    "price": PRICE_KEYS,
+    "quantity": QTY_KEYS,
+    "stock_threshold": THRESHOLD_KEYS,
+    "description": DESC_KEYS,
+    "image_url": IMAGE_KEYS,
+    "category": CATEGORY_KEYS,
+    "first_name": FIRST_NAME_KEYS,
+    "last_name": LAST_NAME_KEYS,
+}
+
+CUSTOMER_FIELD_SPECS: dict[str, tuple[str, ...]] = {
+    "name": NAME_KEYS + ("họ tên", "ho ten", "fullname", "full name"),
+    "phone": PHONE_KEYS,
+    "email": EMAIL_KEYS,
+    "note": NOTE_KEYS,
+    "first_name": FIRST_NAME_KEYS,
+    "last_name": LAST_NAME_KEYS,
+}
 
 
 def _norm_key(s: str) -> str:
@@ -58,14 +104,72 @@ def _build_header_index(headers: list[str]) -> dict[str, int]:
     return idx
 
 
-def _find_col(header_idx: dict[str, int], key_map: tuple[str, ...], mapping_key: str | None = None, custom_mapping: dict[str, str] | None = None) -> int | None:
-    # 1. Ưu tiên custom mapping nếu có
+def _fuzzy_ratio(a: str, b: str) -> float:
+    return SequenceMatcher(None, _norm_key(a), _norm_key(b)).ratio()
+
+
+def suggest_field_for_headers(
+    field_key: str,
+    headers: list[str],
+    key_map: tuple[str, ...],
+) -> tuple[str | None, float]:
+    """Gợi ý cột tốt nhất cho field_key; trả về (header gốc hoặc None, confidence 0–1)."""
+    best_h: str | None = None
+    best_score = 0.0
+    for h in headers:
+        hs = str(h or "").strip()
+        if not hs:
+            continue
+        for key in key_map:
+            nk = _norm_key(key)
+            hn = _norm_key(hs)
+            if nk == hn:
+                return hs, 1.0
+            if nk and (nk in hn or hn in nk):
+                sc = 0.92
+                if sc > best_score:
+                    best_score = sc
+                    best_h = hs
+                break
+            r = _fuzzy_ratio(nk, hn) if nk else 0.0
+            if r > 0.72 and r > best_score:
+                best_score = r
+                best_h = hs
+    return best_h, best_score
+
+
+def suggest_column_mapping(
+    headers: list[str],
+    entity: str,
+) -> dict[str, dict[str, Any]]:
+    """Gợi ý mapping { field_key: { \"header\": str|None, \"confidence\": float } }."""
+    entity_norm = (entity or "products").lower()
+    specs = CUSTOMER_FIELD_SPECS if entity_norm in ("customer", "customers", "khach", "khách") else PRODUCT_FIELD_SPECS
+    out: dict[str, dict[str, Any]] = {}
+    used: set[str] = set()
+    for fk, keys in specs.items():
+        hdr, conf = suggest_field_for_headers(fk, headers, keys)
+        if hdr and hdr in used:
+            # tránh trùng cột cho 2 field
+            out[fk] = {"header": None, "confidence": 0.0}
+            continue
+        if hdr:
+            used.add(hdr)
+        out[fk] = {"header": hdr, "confidence": round(conf, 3)}
+    return out
+
+
+def _find_col(
+    header_idx: dict[str, int],
+    key_map: tuple[str, ...],
+    mapping_key: str | None = None,
+    custom_mapping: dict[str, str] | None = None,
+) -> int | None:
     if custom_mapping and mapping_key and mapping_key in custom_mapping:
         target_header = _norm_key(custom_mapping[mapping_key])
         if target_header in header_idx:
             return header_idx[target_header]
 
-    # 2. Heuristics cũ
     for key in key_map:
         nk = _norm_key(key)
         if nk in header_idx:
@@ -87,6 +191,47 @@ def _cell(row: list[Any], i: int | None) -> str:
     return str(v).strip()
 
 
+def _mapped_header_names(column_mapping: dict[str, str] | None) -> set[str]:
+    if not column_mapping:
+        return set()
+    return {str(v).strip() for v in column_mapping.values() if str(v).strip()}
+
+
+def _format_extra_cell(raw: str) -> str:
+    t = (raw or "").strip()
+    if not t:
+        return t
+    try:
+        from dateutil import parser as date_parser
+
+        dt = date_parser.parse(t, dayfirst=False, fuzzy=True)
+        return dt.date().isoformat()
+    except (ValueError, TypeError, OverflowError):
+        return t
+
+
+def normalize_product_name(raw: str) -> str:
+    return re.sub(r"\s+", " ", (raw or "").strip())
+
+
+def _row_import_extra(
+    row: list[Any],
+    headers: list[str],
+    column_mapping: dict[str, str] | None,
+) -> dict[str, str]:
+    """Cột chưa ánh xạ → lưu dưới import_extra (ghi đè theo header gốc)."""
+    mapped = _mapped_header_names(column_mapping)
+    extra: dict[str, str] = {}
+    for i, h in enumerate(headers):
+        label = str(h or "").strip()
+        if not label or label in mapped:
+            continue
+        val = _cell(row, i)
+        if val:
+            extra[label] = _format_extra_cell(val)
+    return extra
+
+
 _SAFE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -99,18 +244,98 @@ def normalize_email(raw: str) -> str | None:
     return None
 
 
+def parse_price(raw: str | int | float) -> int:
+    """Bỏ ký hiệu tiền, xử lý phân cách hàng nghìn / thập phân (.,)."""
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return int(round(float(raw)))
+    s = str(raw or "").strip()
+    if not s:
+        return 0
+    s = re.sub(r"^[\s₩$€£¥]+\s*", "", s)
+    s = re.sub(r"\s*KRW\b|\s*VND\b|\s*USD\b|\s*원\b", "", s, flags=re.I)
+    s = s.replace("\u00a0", "").replace(" ", "")
+    neg = s.startswith("-")
+    if neg:
+        s = s[1:]
+    core = re.sub(r"[^\d.,]", "", s)
+    if not core:
+        return 0
+    last_comma = core.rfind(",")
+    last_dot = core.rfind(".")
+    normalized: str
+    if last_comma != -1 and last_dot != -1:
+        if last_comma > last_dot:
+            normalized = core.replace(".", "").replace(",", ".")
+        else:
+            normalized = core.replace(",", "")
+    elif last_comma != -1 and last_dot == -1:
+        parts = core.split(",")
+        if len(parts[-1]) in (3,) and all(len(p) <= 3 for p in parts):
+            normalized = "".join(parts)
+        elif len(parts[-1]) == 2 and parts[0]:
+            normalized = core.replace(",", ".")
+        else:
+            normalized = core.replace(",", "")
+    else:
+        normalized = core.replace(",", "") if last_dot != -1 else core.replace(",", ".")
+    try:
+        v = float(normalized or 0)
+    except ValueError:
+        v = 0.0
+    iv = int(round(abs(v)))
+    return -iv if neg else iv
+
+
 def normalize_phone(raw: str) -> str | None:
-    """Chuẩn hóa tối thiểu: chỉ số +, độ dài hợp lý."""
-    s = re.sub(r"[^\d+]", "", (raw or "").strip())
+    """Chuẩn hóa E.164 tối thiểu: VN (+84), KR (+82), còn lại +digits nếu đủ dài."""
+    s = (raw or "").strip()
     if not s:
         return None
-    if s.startswith("00"):
-        s = "+" + s[2:]
-    if s.startswith("0") and not s.startswith("0+"):
-        s = "+84" + s[1:]  # mặc định VN khi bắt đầu 0
-    if len(s) < 8:
+    if s.startswith("+"):
+        d = re.sub(r"\D", "", s[1:])
+        if len(d) < 8:
+            return None
+        return "+" + d
+    digits = re.sub(r"\D", "", s)
+    if not digits:
         return None
-    return s
+    if s.startswith("00"):
+        digits = digits[2:] if len(digits) > 2 else digits
+        if len(digits) >= 8:
+            return "+" + digits
+    if len(digits) >= 10 and digits.startswith("010"):
+        return "+82" + digits[1:]
+    if len(digits) == 10 and digits.startswith("10"):
+        return "+82" + digits
+    if len(digits) >= 11 and digits.startswith("82"):
+        return "+" + digits
+    if len(digits) >= 10 and digits.startswith("84"):
+        return "+" + digits
+    if digits.startswith("0") and not digits.startswith("00"):
+        return "+84" + digits[1:]
+    if len(digits) >= 8:
+        return "+" + digits
+    return None
+
+
+def _concat_customer_name(
+    row: list[Any],
+    col_name: int | None,
+    col_first: int | None,
+    col_last: int | None,
+    column_mapping: dict[str, str] | None,
+) -> str:
+    if col_name is not None:
+        n = _cell(row, col_name)
+        if n:
+            return n
+    parts: list[str] = []
+    if col_first is not None:
+        parts.append(_cell(row, col_first))
+    if col_last is not None:
+        parts.append(_cell(row, col_last))
+    merged = " ".join(p for p in parts if p).strip()
+    return merged
 
 
 async def _get_sheets_service(workspace: Workspace, access_token: str):
@@ -127,6 +352,75 @@ def _extract_spreadsheet_id(raw: str) -> str:
     if m:
         return m.group(1)
     return raw
+
+
+def guess_header_data_rows_1based(rows: list[list[Any]], entity: str) -> tuple[int, int]:
+    """Gợi ý dòng tiêu đề và dòng bắt đầu dữ liệu (1-based), mặc định 1 và 2."""
+    ent = (entity or "products").lower()
+    is_customer = ent in ("customer", "customers", "khach", "khách")
+    for i in range(min(10, len(rows))):
+        headers = [str(h or "") for h in rows[i]]
+        hidx = _build_header_index(headers)
+        if is_customer:
+            if _find_col(hidx, PHONE_KEYS, None, None) is not None or _find_col(
+                hidx, EMAIL_KEYS, None, None
+            ) is not None:
+                return i + 1, i + 2
+        else:
+            if _find_col(hidx, NAME_KEYS, None, None) is not None:
+                return i + 1, i + 2
+    return 1, 2
+
+
+def parse_upload_to_rows(content: bytes, filename: str, max_rows: int | None = None) -> list[list[Any]]:
+    """Parse .csv, .xlsx, .xls thành rows_2d giống Google Sheets API."""
+    name = (filename or "").lower()
+    rows: list[list[Any]] = []
+    if name.endswith(".csv"):
+        text = content.decode("utf-8-sig", errors="replace")
+        reader = csv.reader(io.StringIO(text))
+        for i, r in enumerate(reader):
+            rows.append([c if c != "" else "" for c in r])
+            if max_rows is not None and len(rows) >= max_rows:
+                break
+        return rows
+    if name.endswith(".xlsx"):
+        import openpyxl
+
+        bio = io.BytesIO(content)
+        wb = openpyxl.load_workbook(bio, read_only=True, data_only=True)
+        try:
+            ws = wb.active
+            limit = max_rows
+            for r in ws.iter_rows(values_only=True):
+                rows.append([("" if c is None else c) for c in r])
+                if limit is not None and len(rows) >= limit:
+                    break
+        finally:
+            wb.close()
+        return rows
+    if name.endswith(".xls"):
+        import xlrd
+
+        book = xlrd.open_workbook(file_contents=content)
+        sheet = book.sheet_by_index(0)
+        n = sheet.nrows if max_rows is None else min(sheet.nrows, max_rows)
+        for ri in range(n):
+            row: list[Any] = []
+            for ci in range(sheet.ncols):
+                cell = sheet.cell(ri, ci)
+                v = cell.value
+                if cell.ctype == xlrd.XL_CELL_DATE and v:
+                    try:
+                        t = xlrd.xldate_as_datetime(v, book.datemode)
+                        row.append(t.strftime("%Y-%m-%d"))
+                    except Exception:
+                        row.append(str(v))
+                else:
+                    row.append("" if v is None else v)
+            rows.append(row)
+        return rows
+    raise ValueError("Định dạng không hỗ trợ. Dùng .csv, .xlsx hoặc .xls.")
 
 
 async def list_sheet_titles(db: AsyncSession, workspace: Workspace, spreadsheet_id: str) -> list[str]:
@@ -157,12 +451,10 @@ async def fetch_sheet_preview(
     sheet_name: str,
     limit: int = 10,
 ) -> list[list[Any]]:
-    """Lấy N dòng đầu tiên để người dùng xem trước và ánh xạ cột."""
     spreadsheet_id = _extract_spreadsheet_id(spreadsheet_id)
     access = await ensure_valid_access_token(db, workspace)
     service = await _get_sheets_service(workspace, access)
-    
-    # Chỉ lấy dòng 1 đến limit
+
     rng = f"'{sheet_name.replace(chr(39), chr(39) * 2)}'!1:{limit}"
 
     def _call():
@@ -216,6 +508,31 @@ def _http_error_message(e: HttpError) -> str:
     return f"Lỗi Google Sheets API: {msg}"
 
 
+def build_import_error_csv(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return ""
+    fieldnames = list(records[0].keys())
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    w.writeheader()
+    for r in records:
+        w.writerow({k: r.get(k, "") for k in fieldnames})
+    return buf.getvalue()
+
+
+async def _after_import_commit(db: AsyncSession, dry_run: bool, workspace_id: uuid.UUID) -> None:
+    if dry_run:
+        await db.rollback()
+        return
+    await db.commit()
+    try:
+        from app.workers.embeddings import embed_workspace_products
+
+        embed_workspace_products.delay(str(workspace_id))
+    except Exception as e:
+        logger.warning("embed_workspace_products: %s", e)
+
+
 async def import_products_from_values(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -223,59 +540,96 @@ async def import_products_from_values(
     header_row_index: int = 0,
     data_start_index: int = 1,
     column_mapping: dict[str, str] | None = None,
+    *,
+    duplicate_strategy: DuplicateStrategy = "update",
+    dry_run: bool = False,
+    error_sample_limit: int = 50,
 ) -> dict[str, Any]:
-    """rows_2d: toàn bộ các dòng; header_row_index là chỉ số 0-based của dòng tiêu đề."""
-    if header_row_index >= len(rows_2d):
-        raise ValueError("Không có dòng tiêu đề.")
+    if not rows_2d:
+        raise ValueError("Sheet trống hoặc không có dữ liệu.")
 
-    headers_raw = rows_2d[header_row_index]
-    headers = [str(h or "") for h in headers_raw]
-    hidx = _build_header_index(headers)
+    current_h_idx = header_row_index
+    best_hidx: dict[str, int] = {}
+    col_name: int | None = None
 
-    col_name = _find_col(hidx, NAME_KEYS, "name", column_mapping)
+    for i in range(current_h_idx, min(len(rows_2d), current_h_idx + 10)):
+        headers = [str(h or "") for h in rows_2d[i]]
+        hidx = _build_header_index(headers)
+        test_name = _find_col(hidx, NAME_KEYS, "name", column_mapping)
+        if test_name is not None:
+            col_name = test_name
+            best_hidx = hidx
+            header_row_index = i
+            if data_start_index <= header_row_index:
+                data_start_index = i + 1
+            break
+
+    if col_name is None:
+        raise ValueError(
+            "Không tìm thấy cột tên sản phẩm (hệ thống không tự đoán được dòng tiêu đề, vui lòng kiểm tra lại file)."
+        )
+
+    hidx = best_hidx
+    headers_row = [str(h or "") for h in rows_2d[header_row_index]]
     col_price = _find_col(hidx, PRICE_KEYS, "price", column_mapping)
     col_qty = _find_col(hidx, QTY_KEYS, "quantity", column_mapping)
     col_thr = _find_col(hidx, THRESHOLD_KEYS, "stock_threshold", column_mapping)
     col_desc = _find_col(hidx, DESC_KEYS, "description", column_mapping)
     col_image = _find_col(hidx, IMAGE_KEYS, "image_url", column_mapping)
+    col_cat = _find_col(hidx, CATEGORY_KEYS, "category", column_mapping)
+    col_cat = _find_col(hidx, CATEGORY_KEYS, "category", column_mapping)
+    col_first = _find_col(hidx, FIRST_NAME_KEYS, "first_name", column_mapping)
+    col_last = _find_col(hidx, LAST_NAME_KEYS, "last_name", column_mapping)
 
-    if col_name is None:
-        raise ValueError("Không tìm thấy cột tên sản phẩm (hệ thống không tự đoán được và cũng không có ánh xạ thủ công).")
+    created, updated, skipped, errors = 0, 0, 0, []
+    error_records: list[dict[str, Any]] = []
 
-    created, updated, errors = 0, 0, []
-
-    for offset, row in enumerate(rows_2d[data_start_index:], start=data_start_index + 1):
-        excel_row = offset + 1  # 1-based cho người dùng
+    for rel_idx, row in enumerate(rows_2d[data_start_index:]):
+        excel_row = data_start_index + rel_idx + 1
         try:
             name = _cell(row, col_name)
+            if not name and (col_first is not None or col_last is not None):
+                p1 = _cell(row, col_first) if col_first is not None else ""
+                p2 = _cell(row, col_last) if col_last is not None else ""
+                name = " ".join(p for p in (p1, p2) if p).strip()
+            name = normalize_product_name(name)
             if not name:
                 continue
-            price_s = _cell(row, col_price) or "0"
-            qty_s = _cell(row, col_qty) or "0"
-            thr_s = _cell(row, col_thr) or "5"
-            try:
-                price = int(float(re.sub(r"[^\d.-]", "", price_s) or 0))
-            except ValueError:
-                price = 0
-            try:
-                quantity = int(float(re.sub(r"[^\d.-]", "", qty_s) or 0))
-            except ValueError:
+
+            price_s = _cell(row, col_price) if col_price is not None else "0"
+            qty_s = _cell(row, col_qty) if col_qty is not None else "0"
+            thr_s = _cell(row, col_thr) if col_thr is not None else "5"
+            price = parse_price(price_s)
+            quantity = parse_price(qty_s)  # int cỡ số nguyên
+            threshold = parse_price(thr_s)
+            if quantity < 0:
                 quantity = 0
-            try:
-                threshold = int(float(re.sub(r"[^\d.-]", "", thr_s) or 5))
-            except ValueError:
+            if threshold < 0:
                 threshold = 5
+
             desc = _cell(row, col_desc) if col_desc is not None else ""
             img_url = _cell(row, col_image) if col_image is not None else ""
+            cat = _cell(row, col_cat) if col_cat is not None else ""
+            cat = _cell(row, col_cat) if col_cat is not None else ""
+            extra = _row_import_extra(row, headers_row, column_mapping)
+            meta_payload = None
+            if extra:
+                meta_payload = {"import_extra": extra}
 
-            stmt = select(Product).where(
-                Product.workspace_id == workspace_id,
-                Product.name == name,
-            )
-            result = await db.execute(stmt)
-            existing = result.scalar_one_or_none()
+            existing = None
+            if duplicate_strategy in ("skip", "update"):
+                stmt = select(Product).where(
+                    Product.workspace_id == workspace_id,
+                    Product.name == name,
+                )
+                result = await db.execute(stmt)
+                existing = result.scalar_one_or_none()
 
-            if existing:
+            if existing and duplicate_strategy == "skip":
+                skipped += 1
+                continue
+
+            if existing and duplicate_strategy == "update":
                 existing.price = price
                 existing.quantity = quantity
                 existing.stock_threshold = threshold
@@ -283,8 +637,16 @@ async def import_products_from_values(
                     existing.description = desc
                 if img_url:
                     existing.image_url = img_url
+                if cat:
+                    existing.category = cat
+                if meta_payload is not None:
+                    md = dict(existing.metadata_json or {})
+                    prev = dict(md.get("import_extra") or {})
+                    prev.update(meta_payload["import_extra"])
+                    md["import_extra"] = prev
+                    existing.metadata_json = md
                 updated += 1
-                if existing.quantity <= existing.stock_threshold:
+                if not dry_run and existing.quantity <= existing.stock_threshold:
                     await NotificationService.notify_low_stock(
                         workspace_id,
                         existing.name,
@@ -296,31 +658,36 @@ async def import_products_from_values(
                     workspace_id=workspace_id,
                     name=name,
                     description=desc or "",
+                    category=cat or None,
                     price=price,
                     quantity=quantity,
                     stock_threshold=threshold,
                     image_url=img_url or None,
+                    metadata_json=meta_payload,
                 )
                 db.add(product)
                 created += 1
         except Exception as e:
-            errors.append(f"Dòng {excel_row}: {e}")
+            msg = f"Dòng {excel_row}: {e}"
+            errors.append(msg)
+            error_records.append({"row": excel_row, "message": str(e)})
+            if len(errors) <= error_sample_limit:
+                pass
 
-    await db.commit()
-
-    try:
-        from app.workers.embeddings import embed_workspace_products
-
-        embed_workspace_products.delay(str(workspace_id))
-    except Exception as e:
-        logger.warning("embed_workspace_products: %s", e)
+    await _after_import_commit(db, dry_run, workspace_id)
 
     data_rows = max(0, len(rows_2d) - data_start_index)
+    err_sample = errors[:error_sample_limit]
+    err_csv = build_import_error_csv(error_records) if error_records else ""
     return {
         "total_rows": data_rows,
         "created": created,
         "updated": updated,
-        "errors": errors,
+        "skipped": skipped,
+        "errors": err_sample,
+        "errors_total": len(errors),
+        "error_csv": err_csv,
+        "dry_run": dry_run,
     }
 
 
@@ -331,64 +698,94 @@ async def import_customers_from_values(
     header_row_index: int = 0,
     data_start_index: int = 1,
     column_mapping: dict[str, str] | None = None,
+    *,
+    duplicate_strategy: DuplicateStrategy = "update",
+    dry_run: bool = False,
+    error_sample_limit: int = 50,
 ) -> dict[str, Any]:
     if header_row_index >= len(rows_2d):
         raise ValueError("Không có dòng tiêu đề.")
 
     headers_raw = rows_2d[header_row_index]
-    hidx = _build_header_index([str(h or "") for h in headers_raw])
+    headers_str = [str(h or "") for h in headers_raw]
+    hidx = _build_header_index(headers_str)
 
-    col_name = _find_col(hidx, NAME_KEYS + ("họ tên", "ho ten", "fullname", "full name"), "name", column_mapping)
+    col_name = _find_col(
+        hidx,
+        NAME_KEYS + ("họ tên", "ho ten", "fullname", "full name"),
+        "name",
+        column_mapping,
+    )
     col_phone = _find_col(hidx, PHONE_KEYS, "phone", column_mapping)
     col_email = _find_col(hidx, EMAIL_KEYS, "email", column_mapping)
     col_note = _find_col(hidx, NOTE_KEYS, "note", column_mapping)
+    col_first = _find_col(hidx, FIRST_NAME_KEYS, "first_name", column_mapping)
+    col_last = _find_col(hidx, LAST_NAME_KEYS, "last_name", column_mapping)
 
     if col_phone is None and col_email is None:
         raise ValueError("Cần ít nhất một cột số điện thoại hoặc email để khớp khách hàng.")
 
-    created, updated, errors = 0, 0, []
+    created, updated, skipped, errors = 0, 0, 0, []
+    error_records: list[dict[str, Any]] = []
 
-    for offset, row in enumerate(rows_2d[data_start_index:], start=data_start_index + 1):
-        excel_row = offset + 1
+    for rel_idx, row in enumerate(rows_2d[data_start_index:]):
+        excel_row = data_start_index + rel_idx + 1
         try:
             phone = normalize_phone(_cell(row, col_phone)) if col_phone is not None else None
             email = normalize_email(_cell(row, col_email)) if col_email is not None else None
-            name = _cell(row, col_name) if col_name is not None else ""
+            name = normalize_product_name(_concat_customer_name(row, col_name, col_first, col_last, column_mapping))
             note = _cell(row, col_note) if col_note is not None else ""
+            extra = _row_import_extra(row, headers_str, column_mapping)
+            meta_note: dict[str, Any] = {}
+            if note:
+                meta_note["import_note"] = note
+            if extra:
+                meta_note["import_extra"] = extra
 
             if not phone and not email:
-                errors.append(f"Dòng {excel_row}: thiếu SĐT và email hợp lệ")
+                msg = f"Dòng {excel_row}: thiếu SĐT và email hợp lệ"
+                errors.append(msg)
+                error_records.append({"row": excel_row, "message": msg.replace(f"Dòng {excel_row}: ", "")})
                 continue
 
             existing = None
-            if phone:
-                r = await db.execute(
-                    select(Customer).where(
-                        Customer.workspace_id == workspace_id,
-                        Customer.phone == phone,
+            if duplicate_strategy in ("skip", "update"):
+                if phone:
+                    r = await db.execute(
+                        select(Customer).where(
+                            Customer.workspace_id == workspace_id,
+                            Customer.phone == phone,
+                        )
                     )
-                )
-                existing = r.scalar_one_or_none()
-            if not existing and email:
-                r = await db.execute(
-                    select(Customer).where(
-                        Customer.workspace_id == workspace_id,
-                        Customer.email == email,
+                    existing = r.scalar_one_or_none()
+                if not existing and email:
+                    r = await db.execute(
+                        select(Customer).where(
+                            Customer.workspace_id == workspace_id,
+                            Customer.email == email,
+                        )
                     )
-                )
-                existing = r.scalar_one_or_none()
+                    existing = r.scalar_one_or_none()
 
-            meta_patch = {"import_note": note} if note else None
-            if existing:
+            if existing and duplicate_strategy == "skip":
+                skipped += 1
+                continue
+
+            if existing and duplicate_strategy == "update":
                 if name:
                     existing.name = name
                 if email and not existing.email:
                     existing.email = email
                 if phone and not existing.phone:
                     existing.phone = phone
-                if meta_patch:
+                if meta_note:
                     md = dict(existing.metadata_json or {})
-                    md.update({k: v for k, v in meta_patch.items() if v})
+                    if "import_note" in meta_note:
+                        md["import_note"] = meta_note["import_note"]
+                    if "import_extra" in meta_note:
+                        prev = dict(md.get("import_extra") or {})
+                        prev.update(meta_note["import_extra"])
+                        md["import_extra"] = prev
                     existing.metadata_json = md
                 updated += 1
             else:
@@ -397,20 +794,29 @@ async def import_customers_from_values(
                     phone=phone,
                     email=email,
                     name=name or None,
-                    metadata_json=meta_patch,
+                    metadata_json=meta_note if meta_note else None,
                 )
                 db.add(cust)
                 created += 1
         except Exception as e:
-            errors.append(f"Dòng {excel_row}: {e}")
+            msg = f"Dòng {excel_row}: {e}"
+            errors.append(msg)
+            error_records.append({"row": excel_row, "message": str(e)})
 
-    await db.commit()
+    await _after_import_commit(db, dry_run, workspace_id)
+
     data_rows = max(0, len(rows_2d) - data_start_index)
+    err_sample = errors[:error_sample_limit]
+    err_csv = build_import_error_csv(error_records) if error_records else ""
     return {
         "total_rows": data_rows,
         "created": created,
         "updated": updated,
-        "errors": errors,
+        "skipped": skipped,
+        "errors": err_sample,
+        "errors_total": len(errors),
+        "error_csv": err_csv,
+        "dry_run": dry_run,
     }
 
 
@@ -424,15 +830,74 @@ async def run_import_for_workspace(
     data_start_row_1based: int = 2,
     range_a1: str | None = None,
     column_mapping: dict[str, str] | None = None,
+    *,
+    duplicate_strategy: DuplicateStrategy = "update",
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     spreadsheet_id = _extract_spreadsheet_id(spreadsheet_id)
-    values = await fetch_sheet_values(
-        db, workspace, spreadsheet_id, sheet_name, range_a1
-    )
+    values = await fetch_sheet_values(db, workspace, spreadsheet_id, sheet_name, range_a1)
     h_idx = max(0, header_row_1based - 1)
     d_idx = max(h_idx + 1, data_start_row_1based - 1)
 
     entity_norm = (entity or "products").lower()
     if entity_norm in ("customer", "customers", "khach", "khách"):
-        return await import_customers_from_values(db, workspace.id, values, h_idx, d_idx, column_mapping)
-    return await import_products_from_values(db, workspace.id, values, h_idx, d_idx, column_mapping)
+        return await import_customers_from_values(
+            db,
+            workspace.id,
+            values,
+            h_idx,
+            d_idx,
+            column_mapping,
+            duplicate_strategy=duplicate_strategy,
+            dry_run=dry_run,
+        )
+    return await import_products_from_values(
+        db,
+        workspace.id,
+        values,
+        h_idx,
+        d_idx,
+        column_mapping,
+        duplicate_strategy=duplicate_strategy,
+        dry_run=dry_run,
+    )
+
+
+async def import_from_file_bytes(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    content: bytes,
+    filename: str,
+    entity: str,
+    header_row_1based: int = 1,
+    data_start_row_1based: int = 2,
+    column_mapping: dict[str, str] | None = None,
+    *,
+    duplicate_strategy: DuplicateStrategy = "update",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    values = parse_upload_to_rows(content, filename, max_rows=None)
+    h_idx = max(0, header_row_1based - 1)
+    d_idx = max(h_idx + 1, data_start_row_1based - 1)
+    entity_norm = (entity or "products").lower()
+    if entity_norm in ("customer", "customers", "khach", "khách"):
+        return await import_customers_from_values(
+            db,
+            workspace_id,
+            values,
+            h_idx,
+            d_idx,
+            column_mapping,
+            duplicate_strategy=duplicate_strategy,
+            dry_run=dry_run,
+        )
+    return await import_products_from_values(
+        db,
+        workspace_id,
+        values,
+        h_idx,
+        d_idx,
+        column_mapping,
+        duplicate_strategy=duplicate_strategy,
+        dry_run=dry_run,
+    )

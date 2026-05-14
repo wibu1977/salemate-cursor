@@ -1,8 +1,11 @@
 import re
 import uuid
 
-from typing import Any
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+DuplicateStrategy = Literal["skip", "update", "create_all"]
 
 
 class ProductCreate(BaseModel):
@@ -38,6 +41,7 @@ class ProductResponse(BaseModel):
     stock_threshold: int
     image_url: str | None
     is_active: bool
+    metadata_json: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -60,6 +64,10 @@ class SheetImportRequest(BaseModel):
     data_start_row: int = Field(2, ge=1)
     range_a1: str | None = Field(None, description="VD: A1:Z999 — tùy chọn")
     column_mapping: dict[str, str] | None = Field(None, description="Ánh xạ trường Salemate -> Tên cột trong sheet")
+    duplicate_strategy: DuplicateStrategy = Field(
+        "update",
+        description="skip | update | create_all",
+    )
 
     @field_validator("spreadsheet_id", mode="before")
     @classmethod
@@ -71,7 +79,53 @@ class SheetImportSummary(BaseModel):
     total_rows: int
     created: int
     updated: int
+    skipped: int = 0
     errors: list[str] = []
+    errors_total: int | None = None
+    error_csv: str | None = None
+    dry_run: bool | None = None
+
+
+class ColumnSuggestRequest(BaseModel):
+    headers: list[str]
+    entity: str = "products"
+
+
+class ColumnSuggestEntry(BaseModel):
+    header: str | None = None
+    confidence: float = 0.0
+
+
+class ColumnSuggestResponse(BaseModel):
+    suggestions: dict[str, ColumnSuggestEntry]
+
+
+class ImportTemplateCreate(BaseModel):
+    entity: str = "products"
+    name: str = "default"
+    column_mapping: dict[str, str] = Field(default_factory=dict)
+    duplicate_strategy: DuplicateStrategy = "update"
+
+
+class ImportTemplateResponse(BaseModel):
+    """ORM cột mapping_json được trả ra API dưới tên column_mapping."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    entity: str
+    name: str
+    column_mapping: dict[str, str] = Field(validation_alias="mapping_json")
+    duplicate_strategy: str = Field(default="update")
+
+
+class GridImportValidateRequest(BaseModel):
+    entity: str = "products"
+    rows: list[list[Any]]
+    header_row: int = Field(1, ge=1)
+    data_start_row: int = Field(2, ge=1)
+    column_mapping: dict[str, str] | None = None
+    duplicate_strategy: DuplicateStrategy = "update"
 
 
 class ImportJobCreateResponse(BaseModel):
@@ -92,3 +146,5 @@ class SheetTabsResponse(BaseModel):
 
 class SheetPreviewResponse(BaseModel):
     rows: list[list[Any]]
+    header_row: int = Field(1, ge=1, description="Gợi ý dòng tiêu đề (1-based)")
+    data_start_row: int = Field(2, ge=1, description="Gợi ý dòng dữ liệu đầu (1-based)")

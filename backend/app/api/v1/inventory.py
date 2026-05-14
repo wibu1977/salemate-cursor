@@ -1,12 +1,15 @@
+import json
+import logging
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.api.deps import get_current_workspace_id
 from app.models.import_job import ImportJob, ImportJobStatus
+from app.models.import_template import ImportTemplate
 from app.models.workspace import Workspace
 from app.schemas.inventory import (
     ProductCreate,
@@ -18,12 +21,31 @@ from app.schemas.inventory import (
     SheetImportSummary,
     SheetTabsResponse,
     SheetPreviewResponse,
+    ColumnSuggestRequest,
+    ColumnSuggestResponse,
+    ColumnSuggestEntry,
+    ImportTemplateCreate,
+    ImportTemplateResponse,
+    GridImportValidateRequest,
 )
-from app.services.import_job_runner import run_sheets_import_job
+from app.services.import_job_runner import run_file_import_job, run_sheets_import_job
 from app.services.inventory_service import InventoryService
-from app.services.sheets_import_service import list_sheet_titles, fetch_sheet_preview
+from app.services.sheets_import_service import (
+    guess_header_data_rows_1based,
+    list_sheet_titles,
+    fetch_sheet_preview,
+    parse_upload_to_rows,
+    suggest_column_mapping,
+    import_products_from_values,
+    import_customers_from_values,
+    run_import_for_workspace,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 
 @router.get("/products", response_model=list[ProductResponse])
@@ -68,6 +90,12 @@ async def spreadsheet_tabs(
         titles = await list_sheet_titles(db, ws, spreadsheet_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception:
+        logger.exception("spreadsheet_tabs failed workspace=%s", workspace_id)
+        raise HTTPException(
+            status_code=400,
+            detail="Không đọc được danh sách tab Google Sheet. Thử lại hoặc kết nối lại Google.",
+        ) from None
     return SheetTabsResponse(titles=titles)
 
 
@@ -88,7 +116,201 @@ async def spreadsheet_preview(
         rows = await fetch_sheet_preview(db, ws, spreadsheet_id, sheet_name, limit)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return SheetPreviewResponse(rows=rows)
+    except Exception:
+        logger.exception(
+            "spreadsheet_preview failed workspace=%s sheet=%s",
+            workspace_id,
+            sheet_name,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Không xem trước được sheet. Kiểm tra tên tab và quyền truy cập, rồi thử lại.",
+        ) from None
+    ent = "products"
+    h1, d1 = guess_header_data_rows_1based(rows, ent)
+    return SheetPreviewResponse(rows=rows, header_row=h1, data_start_row=d1)
+
+
+@router.post("/import/sheets/validate", response_model=SheetImportSummary)
+async def validate_sheet_import(
+    payload: SheetImportRequest,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    result = await db.execute(stmt)
+    ws = result.scalar_one_or_none()
+    if not ws or not (ws.google_refresh_token or "").strip():
+        raise HTTPException(status_code=400, detail="Chưa kết nối Google.")
+    try:
+        result_dict = await run_import_for_workspace(
+            db,
+            ws,
+            payload.spreadsheet_id,
+            payload.sheet_name,
+            payload.entity,
+            header_row_1based=payload.header_row,
+            data_start_row_1based=payload.data_start_row,
+            range_a1=payload.range_a1,
+            column_mapping=payload.column_mapping,
+            duplicate_strategy=payload.duplicate_strategy,
+            dry_run=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return SheetImportSummary.model_validate(result_dict)
+
+
+@router.post("/import/columns/suggest", response_model=ColumnSuggestResponse)
+async def import_columns_suggest(payload: ColumnSuggestRequest):
+    raw = suggest_column_mapping(payload.headers, payload.entity)
+    suggestions: dict[str, ColumnSuggestEntry] = {}
+    for k, v in raw.items():
+        suggestions[k] = ColumnSuggestEntry(
+            header=v.get("header"),
+            confidence=float(v.get("confidence") or 0.0),
+        )
+    return ColumnSuggestResponse(suggestions=suggestions)
+
+
+@router.post("/import/file/preview", response_model=SheetPreviewResponse)
+async def import_file_preview(
+    file: UploadFile = File(...),
+    entity: str = Form("products"),
+    max_rows: int = Form(200),
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+):
+    _ = workspace_id
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File quá lớn (tối đa ~12MB).")
+    try:
+        rows = parse_upload_to_rows(content, file.filename or "upload.csv", max_rows=max_rows)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    h1, d1 = guess_header_data_rows_1based(rows, entity)
+    return SheetPreviewResponse(rows=rows, header_row=h1, data_start_row=d1)
+
+
+@router.post("/import/validate", response_model=SheetImportSummary)
+async def import_validate(
+    payload: GridImportValidateRequest,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    h_idx = max(0, payload.header_row - 1)
+    d_idx = max(h_idx + 1, payload.data_start_row - 1)
+    entity_norm = (payload.entity or "products").lower()
+    try:
+        if entity_norm in ("customer", "customers", "khach", "khách"):
+            result = await import_customers_from_values(
+                db,
+                workspace_id,
+                payload.rows,
+                h_idx,
+                d_idx,
+                payload.column_mapping,
+                duplicate_strategy=payload.duplicate_strategy,
+                dry_run=True,
+            )
+        else:
+            result = await import_products_from_values(
+                db,
+                workspace_id,
+                payload.rows,
+                h_idx,
+                d_idx,
+                payload.column_mapping,
+                duplicate_strategy=payload.duplicate_strategy,
+                dry_run=True,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return SheetImportSummary.model_validate(result)
+
+
+@router.post("/import/file", response_model=ImportJobCreateResponse)
+async def enqueue_file_import(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    entity: str = Form("products"),
+    header_row: int = Form(1),
+    data_start_row: int = Form(2),
+    column_mapping_json: str = Form("{}"),
+    duplicate_strategy: str = Form("update"),
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    if duplicate_strategy not in ("skip", "update", "create_all"):
+        raise HTTPException(status_code=400, detail="duplicate_strategy không hợp lệ.")
+    try:
+        column_mapping = json.loads(column_mapping_json) if column_mapping_json.strip() else {}
+        if not isinstance(column_mapping, dict):
+            raise ValueError("column_mapping phải là object JSON.")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"column_mapping_json không phải JSON: {e}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File quá lớn (tối đa ~12MB).")
+
+    job = ImportJob(
+        workspace_id=workspace_id,
+        status=ImportJobStatus.pending.value,
+        kind=f"file_{entity}",
+        progress_percent=0,
+    )
+    db.add(job)
+    await db.flush()
+    await db.refresh(job)
+
+    background_tasks.add_task(
+        run_file_import_job,
+        job.id,
+        workspace_id,
+        content,
+        file.filename or "upload.csv",
+        entity,
+        header_row,
+        data_start_row,
+        column_mapping,
+        duplicate_strategy,  # type: ignore[arg-type]
+    )
+    return ImportJobCreateResponse(job_id=job.id)
+
+
+@router.get("/import/templates", response_model=list[ImportTemplateResponse])
+async def list_import_templates(
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(ImportTemplate)
+        .where(ImportTemplate.workspace_id == workspace_id)
+        .order_by(ImportTemplate.updated_at.desc())
+    )
+    res = await db.execute(stmt)
+    return list(res.scalars().all())
+
+
+@router.post("/import/templates", response_model=ImportTemplateResponse)
+async def create_import_template(
+    payload: ImportTemplateCreate,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    tpl = ImportTemplate(
+        workspace_id=workspace_id,
+        name=payload.name,
+        entity=payload.entity,
+        mapping_json=payload.column_mapping or {},
+    )
+    db.add(tpl)
+    await db.commit()
+    await db.refresh(tpl)
+    return tpl
 
 
 @router.post("/import/sheets", response_model=ImportJobCreateResponse)
@@ -125,6 +347,7 @@ async def enqueue_sheet_import(
         payload.data_start_row,
         payload.range_a1,
         payload.column_mapping,
+        payload.duplicate_strategy,
     )
     return ImportJobCreateResponse(job_id=job.id)
 
