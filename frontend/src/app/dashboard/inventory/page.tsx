@@ -220,12 +220,19 @@ export default function InventoryPage() {
 
   const previewHeaders = useMemo(() => {
     if (!activePreview?.rows?.length) return [];
-    return activePreview.rows[0].map((h: unknown) => String(h ?? ""));
-  }, [activePreview]);
+    const idx = Math.max(0, headerRow - 1);
+    if (idx >= activePreview.rows.length) return [];
+    const row = activePreview.rows[idx] as unknown[] | undefined;
+    if (!row?.length) return [];
+    return row.map((h: unknown, i: number) => {
+      const s = String(h ?? "").trim();
+      return s || `(Cột ${i + 1})`;
+    });
+  }, [activePreview, headerRow]);
 
   const sampleRowForConnector = useMemo(() => {
     if (!activePreview?.rows?.length) return undefined;
-    const idx = Math.min(Math.max(dataStartRow - 1, 1), activePreview.rows.length - 1);
+    const idx = Math.min(Math.max(dataStartRow - 1, 0), activePreview.rows.length - 1);
     return activePreview.rows[idx] as unknown[] | undefined;
   }, [activePreview, dataStartRow]);
 
@@ -272,7 +279,7 @@ export default function InventoryPage() {
     setColumnMapping((mapping) => {
       const next = { ...mapping };
       const fields = [
-        { key: "name", patterns: [/name/i, /tên/i, /product/i, /sản phẩm/i, /hàng/i] },
+        { key: "name", patterns: [/name/i, /tên/i, /product/i, /sản phẩm/i, /sản\s*phẩm/i, /hàng/i] },
         { key: "price", patterns: [/price/i, /giá/i, /cost/i, /bán/i] },
         { key: "quantity", patterns: [/qty/i, /số lượng/i, /quantity/i, /stock/i, /tồn/i] },
         { key: "stock_threshold", patterns: [/threshold/i, /ngưỡng/i, /cảnh báo/i] },
@@ -843,14 +850,16 @@ export default function InventoryPage() {
                             onChange={setColumnMapping}
                           />
 
-                          {activePreview?.rows && activePreview.rows.length > 1 && (
+                          {activePreview?.rows &&
+                            previewHeaders.length > 0 &&
+                            activePreview.rows.length > Math.max(0, dataStartRow - 1) && (
                             <div className="space-y-4">
                               <div className="flex items-center justify-between px-1">
                                 <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                   Dữ liệu nguồn thực tế
                                 </h5>
                                 <span className="text-[9px] font-bold text-slate-300">
-                                  Đang hiển thị 5 dòng đầu
+                                  Đang hiển thị 5 dòng dữ liệu đầu (theo dòng bắt đầu)
                                 </span>
                               </div>
                               <div className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm ring-1 ring-slate-200/50">
@@ -881,7 +890,12 @@ export default function InventoryPage() {
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                      {activePreview.rows.slice(1, 6).map((row: unknown[], i: number) => (
+                                      {activePreview.rows
+                                        .slice(
+                                          Math.max(0, dataStartRow - 1),
+                                          Math.max(0, dataStartRow - 1) + 5,
+                                        )
+                                        .map((row: unknown[], i: number) => (
                                         <tr key={i} className="hover:bg-slate-50/30 transition-colors">
                                           {row.map((cell, j) => {
                                             const isMapped = Object.values(columnMapping).includes(
@@ -957,7 +971,9 @@ export default function InventoryPage() {
                           importSheetsMutation.isPending ||
                           importFileMutation.isPending ||
                           (!columnMapping.name &&
-                            !previewHeaders.some((h) => /name|tên|product/i.test(h)))
+                            !previewHeaders.some((h) =>
+                              /name|tên|product|sản phẩm|san pham/i.test(h),
+                            ))
                         }
                         className="ai-glow flex-[2] rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
                       >
