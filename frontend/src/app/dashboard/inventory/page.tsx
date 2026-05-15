@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inventoryApi, googleAuthApi, pollImportJob, formatApiError, type DuplicateStrategy } from "@/lib/api";
 import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
@@ -24,6 +24,7 @@ import {
   Layers,
   Sparkles,
   FolderOpen,
+  X,
 } from "lucide-react";
 
 const PRODUCT_IMPORT_FIELDS: ConnectorField[] = [
@@ -300,6 +301,21 @@ export default function InventoryPage() {
     });
   }, [previewHeaderKey, sheetName, importSource]);
 
+  const closeSyncImportPanel = useCallback(() => {
+    setShowSync(false);
+    setPickedSpreadsheetId("");
+    setPickedSpreadsheetName(null);
+    setImportStep(0);
+    setSheetName("Sheet1");
+    setHeaderRow(1);
+    setDataStartRow(2);
+    setColumnMapping({});
+    setValidateSummary(null);
+    setFilePreviewData(null);
+    setUploadFile(null);
+    setUploadFileName(null);
+  }, []);
+
   const connectGoogle = () => {
     const next =
       typeof window !== "undefined"
@@ -419,17 +435,13 @@ export default function InventoryPage() {
       const d = job.result;
       toast(
         `Đồng bộ xong: ${d?.created ?? 0} mới, ${d?.updated ?? 0} cập nhật, ${d?.skipped ?? 0} bỏ qua` +
-          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi mẫu)` : ""),
+          (d?.errors?.length ? ` (${d.errors.length} dòng lỗi mẫu)` : "") +
+          " — Chọn tab khác để nhập tiếp, hoặc bấm Đóng khi xong.",
         "success"
       );
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      setShowSync(false);
-      setPickedSpreadsheetId("");
-      setPickedSpreadsheetName(null);
       setImportStep(0);
       setColumnMapping({});
-      setFilePreviewData(null);
-      setUploadFileName(null);
       setValidateSummary(null);
     },
     onError: (e: unknown) => toast(formatApiError(e), "error"),
@@ -516,6 +528,15 @@ export default function InventoryPage() {
       {/* Sync Section Panel */}
       {showSync && (
         <div className="ai-glow relative overflow-hidden rounded-[2.5rem] border border-accent-soft bg-white p-8 shadow-2xl shadow-accent/15/50 animate-in fade-in slide-in-from-top-4 duration-500">
+          <button
+            type="button"
+            onClick={closeSyncImportPanel}
+            className="absolute right-6 top-6 z-20 flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-200 hover:text-slate-900"
+            aria-label="Đóng nhập dữ liệu"
+          >
+            <X className="h-4 w-4" />
+            Đóng
+          </button>
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent-soft/50 blur-3xl" />
           <div className="relative flex flex-col gap-8">
             <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-100/80 p-1.5 ring-1 ring-slate-200/60">
@@ -660,6 +681,8 @@ export default function InventoryPage() {
                                 onClick={() => {
                                   setSheetName(t);
                                   setImportStep(0);
+                                  setColumnMapping({});
+                                  setValidateSummary(null);
                                 }}
                                 className={`rounded-xl px-4 py-2 text-xs font-black transition-all ${
                                   sheetName === t
