@@ -297,7 +297,7 @@ export function ImportWizardModal({ open, onClose, googleStatus }: ImportWizardM
     setPickerBusy(true);
     try {
       const { data: cfg } = await googleAuthApi.pickerConfig();
-      const picked = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key);
+      const picked = await pickGoogleSpreadsheet(cfg.access_token, cfg.developer_key ?? "");
       if (picked) {
         setPickedSpreadsheetId(picked.id);
         setPickedSpreadsheetName(picked.name || picked.id);
