@@ -123,7 +123,13 @@ class RAGService:
     @staticmethod
     async def embed_product(db: AsyncSession, product: Product):
         """Generate and store embedding for a single product."""
-        text = f"{product.name}. {product.description or ''} Danh mục: {product.category or 'chung'}"
+        text = (
+            f"Sản phẩm: {product.name}. "
+            f"Giá: {product.price:,} {product.currency}. "
+            f"Danh mục: {product.category or 'chung'}. "
+            f"Mô tả: {product.description or 'không có mô tả'}. "
+            f"Tồn kho: {product.quantity}."
+        )
         try:
             embedding = await RAGService.get_embedding(text)
             product.embedding = embedding

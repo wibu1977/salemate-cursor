@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 
@@ -30,6 +31,9 @@ async def run_sheets_import_job(
     range_a1: str | None,
     column_mapping: dict[str, str] | None = None,
     duplicate_strategy: DuplicateStrategy = "update",
+    ai_categories: dict[str, str] | None = None,
+    default_overrides: dict[str, Any] | None = None,
+    manual_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     async with async_session() as session:
         job = await session.get(ImportJob, job_id)
@@ -63,6 +67,9 @@ async def run_sheets_import_job(
                 column_mapping=column_mapping,
                 duplicate_strategy=duplicate_strategy,
                 dry_run=False,
+                ai_categories=ai_categories,
+                default_overrides=default_overrides,
+                manual_overrides=manual_overrides,
             )
             job_row = await session.get(ImportJob, job_id)
             if not job_row:
@@ -91,6 +98,9 @@ async def run_file_import_job(
     data_start_row: int,
     column_mapping: dict[str, str] | None,
     duplicate_strategy: DuplicateStrategy = "update",
+    ai_categories: dict[str, str] | None = None,
+    default_overrides: dict[str, Any] | None = None,
+    manual_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     async with async_session() as session:
         job = await session.get(ImportJob, job_id)
@@ -121,6 +131,9 @@ async def run_file_import_job(
                 column_mapping=column_mapping,
                 duplicate_strategy=duplicate_strategy,
                 dry_run=False,
+                ai_categories=ai_categories,
+                default_overrides=default_overrides,
+                manual_overrides=manual_overrides,
             )
             job_row = await session.get(ImportJob, job_id)
             if not job_row:

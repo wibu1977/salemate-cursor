@@ -188,28 +188,28 @@ Tạo toàn bộ bảng: workspaces, customers, orders, inventory, campaigns, fr
 ## PHASE 4: THANH TOÁN & OCR CHỐNG GIAN LẬN (Ngày 13-18)
 
 ### 4A. Toss Payments Gateway
-- [ ] **4.1** Toss Payments SDK integration (Server-side)
-- [ ] **4.2** Payment flow:
+- [x] **4.1** Toss Payments SDK integration (Server-side)
+- [x] **4.2** Payment flow:
   ```
   Khách nhận memo_code → Chuyển khoản qua Toss → 
   Toss webhook → Backend xác nhận → Cập nhật Order
   ```
-- [ ] **4.3** Webview thanh toán (hiển thị thông tin chuyển khoản)
-- [ ] **4.4** Tiền KHÔNG lưu trong hệ thống (pass-through model)
+- [x] **4.3** Webview thanh toán (hiển thị thông tin chuyển khoản)
+- [x] **4.4** Tiền KHÔNG lưu trong hệ thống (pass-through model)
 
 ### 4B. OCR Chống Gian Lận
-- [ ] **4.5** Google Cloud Vision OCR integration
-- [ ] **4.6** Trích xuất từ ảnh bill: `bill_time`, `bill_memo`, `bill_amount`
-- [ ] **4.7** Logic đối soát 4 lớp:
+- [x] **4.5** Google Cloud Vision OCR integration
+- [x] **4.6** Trích xuất từ ảnh bill: `bill_time`, `bill_memo`, `bill_amount`
+- [x] **4.7** Logic đối soát 4 lớp:
   | Lớp | Check | Fail Action |
   |-----|-------|-------------|
   | 1 - Thời gian | `bill_time >= order.created_at` | REJECT |
   | 2 - Nội dung | `bill_memo == order.memo_code` | FLAG → Admin |
   | 3 - Số tiền | `bill_amount == order.total_amount` | FLAG → Admin |
   | 4 - Trùng lặp | Image hash unique check | REJECT |
-- [ ] **4.8** Image hashing (perceptual hash - chống chỉnh sửa nhẹ)
-- [ ] **4.9** Cloudinary upload cho ảnh bill
-- [ ] **4.10** Fraud_Logs ghi vết + thông báo Admin qua Salemate v1
+- [x] **4.8** Image hashing (perceptual hash - chống chỉnh sửa nhẹ)
+- [x] **4.9** Cloudinary upload cho ảnh bill
+- [x] **4.10** Fraud_Logs ghi vết + thông báo Admin qua Salemate v1
 
 ### Fallback OCR (Cost Control):
 - Nếu Google Cloud Vision phí cao → chuyển sang Tesseract OCR (open-source)
@@ -219,33 +219,33 @@ Tạo toàn bộ bảng: workspaces, customers, orders, inventory, campaigns, fr
 ## PHASE 5: ADMIN DASHBOARD (Ngày 19-26)
 
 ### 5A. Authentication
-- [ ] **5.1** Facebook OAuth Login (shop owner đăng nhập bằng FB)
-- [ ] **5.2** JWT token management
-- [ ] **5.3** Workspace authorization (shop owner chỉ thấy data của mình)
+- [x] **5.1** Facebook OAuth Login (shop owner đăng nhập bằng FB)
+- [x] **5.2** JWT token management
+- [x] **5.3** Workspace authorization (shop owner chỉ thấy data của mình)
 
 ### 5B. Dashboard Pages
-- [ ] **5.4** **Báo cáo 30 giây** (Trang chính):
+- [x] **5.4** **Báo cáo 30 giây** (Trang chính):
   - Tổng doanh thu hôm nay / tuần / tháng
   - Số đơn hàng (pending, confirmed, flagged)
   - Top sản phẩm bán chạy
   - Cảnh báo tồn kho thấp
-- [ ] **5.5** **Quản lý Đơn hàng**:
+- [x] **5.5** **Quản lý Đơn hàng**:
   - Danh sách đơn (filter: status, date)
   - Chi tiết đơn + ảnh bill OCR
   - Duyệt/Từ chối đơn bị FLAG
-- [ ] **5.6** **Quản lý Tồn kho**:
+- [x] **5.6** **Quản lý Tồn kho**:
   - Danh sách sản phẩm + số lượng
   - Chỉnh sửa `stock_threshold`
   - Nút sync Google Sheets / Upload Excel
-- [ ] **5.7** **Cài đặt Workspace**:
+- [x] **5.7** **Cài đặt Workspace**:
   - Kết nối Facebook Page(s)
   - Cấu hình giờ gửi báo cáo
   - Quản lý system prompt cho AI
 
 ### 5C. Webview Pages (Trong Messenger)
-- [ ] **5.8** Order detail view (cho admin review trong Messenger)
-- [ ] **5.9** Fraud alert detail view
-- [ ] **5.10** Campaign approval view
+- [x] **5.8** Order detail view (cho admin review trong Messenger)
+- [x] **5.9** Fraud alert detail view
+- [x] **5.10** Campaign approval view
 
 ---
 

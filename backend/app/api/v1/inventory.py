@@ -27,6 +27,10 @@ from app.schemas.inventory import (
     ImportTemplateCreate,
     ImportTemplateResponse,
     GridImportValidateRequest,
+    ImportAnalysisResponse,
+    ImportAnalysisMatchedField,
+    CategorizeRequest,
+    CategorizeResponse,
 )
 from app.services.import_job_runner import run_file_import_job, run_sheets_import_job
 from app.services.inventory_service import InventoryService
@@ -36,9 +40,14 @@ from app.services.sheets_import_service import (
     fetch_sheet_preview,
     parse_upload_to_rows,
     suggest_column_mapping,
+    analyze_file_structure,
     import_products_from_values,
     import_customers_from_values,
     run_import_for_workspace,
+)
+from app.services.categorizer_service import (
+    CategorizerService,
+    get_workspace_categories,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +163,8 @@ async def validate_sheet_import(
             range_a1=payload.range_a1,
             column_mapping=payload.column_mapping,
             duplicate_strategy=payload.duplicate_strategy,
+            ai_categories=payload.ai_categories,
+            default_overrides=payload.default_overrides,
             dry_run=True,
         )
     except ValueError as e:
@@ -192,6 +203,48 @@ async def import_file_preview(
     return SheetPreviewResponse(rows=rows, header_row=h1, data_start_row=d1)
 
 
+@router.post("/import/analyze", response_model=ImportAnalysisResponse)
+async def analyze_import_file(
+    file: UploadFile = File(...),
+    entity: str = Form("products"),
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+):
+    """Analyze uploaded file: detect columns, missing fields, smart defaults, embedded images."""
+    _ = workspace_id
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File quá lớn (tối đa ~12MB).")
+    try:
+        result = analyze_file_structure(content, file.filename or "upload.csv", entity)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    matched = {
+        k: ImportAnalysisMatchedField(header=v.get("header"), confidence=v.get("confidence", 0.0))
+        for k, v in result.get("matched_fields", {}).items()
+    }
+    return ImportAnalysisResponse(
+        matched_fields=matched,
+        missing_fields=result.get("missing_fields", []),
+        defaults_applied=result.get("defaults_applied", {}),
+        total_rows=result.get("total_rows", 0),
+        has_embedded_images=result.get("has_embedded_images", False),
+        embedded_image_count=result.get("embedded_image_count", 0),
+    )
+
+
+@router.post("/import/categorize", response_model=CategorizeResponse)
+async def categorize_products(
+    payload: CategorizeRequest,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-powered product categorization — Phase 3."""
+    existing = await get_workspace_categories(db, workspace_id)
+    suggestions = await CategorizerService.categorize_products(
+        payload.product_names, existing
+    )
+    return CategorizeResponse(suggestions=suggestions)
+
 @router.post("/import/validate", response_model=SheetImportSummary)
 async def import_validate(
     payload: GridImportValidateRequest,
@@ -211,6 +264,7 @@ async def import_validate(
                 d_idx,
                 payload.column_mapping,
                 duplicate_strategy=payload.duplicate_strategy,
+                default_overrides=payload.default_overrides,
                 dry_run=True,
             )
         else:
@@ -222,6 +276,9 @@ async def import_validate(
                 d_idx,
                 payload.column_mapping,
                 duplicate_strategy=payload.duplicate_strategy,
+                ai_categories=payload.ai_categories,
+                default_overrides=payload.default_overrides,
+                manual_overrides=payload.manual_overrides,
                 dry_run=True,
             )
     except ValueError as e:
@@ -238,6 +295,9 @@ async def enqueue_file_import(
     data_start_row: int = Form(2),
     column_mapping_json: str = Form("{}"),
     duplicate_strategy: str = Form("update"),
+    ai_categories_json: str = Form("{}"),
+    default_overrides_json: str = Form("{}"),
+    manual_overrides_json: str = Form("{}"),
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -251,6 +311,27 @@ async def enqueue_file_import(
         raise HTTPException(status_code=400, detail=f"column_mapping_json không phải JSON: {e}") from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    try:
+        ai_categories = json.loads(ai_categories_json) if ai_categories_json.strip() else {}
+        if not isinstance(ai_categories, dict):
+            ai_categories = {}
+    except json.JSONDecodeError:
+        ai_categories = {}
+
+    try:
+        default_overrides = json.loads(default_overrides_json) if default_overrides_json.strip() else {}
+        if not isinstance(default_overrides, dict):
+            default_overrides = {}
+    except json.JSONDecodeError:
+        default_overrides = {}
+
+    try:
+        manual_overrides = json.loads(manual_overrides_json) if manual_overrides_json.strip() else {}
+        if not isinstance(manual_overrides, dict):
+            manual_overrides = {}
+    except json.JSONDecodeError:
+        manual_overrides = {}
 
     content = await file.read()
     if len(content) > _MAX_UPLOAD_BYTES:
@@ -277,6 +358,9 @@ async def enqueue_file_import(
         data_start_row,
         column_mapping,
         duplicate_strategy,  # type: ignore[arg-type]
+        ai_categories or None,
+        default_overrides or None,
+        manual_overrides or None,
     )
     return ImportJobCreateResponse(job_id=job.id)
 
@@ -348,6 +432,9 @@ async def enqueue_sheet_import(
         payload.range_a1,
         payload.column_mapping,
         payload.duplicate_strategy,
+        payload.ai_categories,
+        payload.default_overrides,
+        payload.manual_overrides,
     )
     return ImportJobCreateResponse(job_id=job.id)
 

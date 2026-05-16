@@ -68,6 +68,15 @@ class SheetImportRequest(BaseModel):
         "update",
         description="skip | update | create_all",
     )
+    ai_categories: dict[str, str] | None = Field(
+        None, description="Gợi ý danh mục từ AI (product_name -> category)"
+    )
+    default_overrides: dict[str, Any] | None = Field(
+        None, description="Giá trị mặc định người dùng nhập cho các cột thiếu"
+    )
+    manual_overrides: dict[str, dict[str, Any]] | None = Field(
+        None, description="Ghi đè thủ công từng dòng (product_name -> {field: value})"
+    )
 
     @field_validator("spreadsheet_id", mode="before")
     @classmethod
@@ -84,6 +93,9 @@ class SheetImportSummary(BaseModel):
     errors_total: int | None = None
     error_csv: str | None = None
     dry_run: bool | None = None
+    # Phase 1: smart-defaults metadata
+    missing_fields: list[str] | None = None
+    auto_filled_fields: dict[str, Any] | None = None
 
 
 class ColumnSuggestRequest(BaseModel):
@@ -126,6 +138,15 @@ class GridImportValidateRequest(BaseModel):
     data_start_row: int = Field(2, ge=1)
     column_mapping: dict[str, str] | None = None
     duplicate_strategy: DuplicateStrategy = "update"
+    ai_categories: dict[str, str] | None = Field(
+        None, description="Gợi ý danh mục từ AI hoặc ghi đè từ người dùng"
+    )
+    default_overrides: dict[str, Any] | None = Field(
+        None, description="Giá trị mặc định người dùng nhập cho các cột thiếu"
+    )
+    manual_overrides: dict[str, dict[str, Any]] | None = Field(
+        None, description="Ghi đè thủ công từng dòng (product_name -> {field: value})"
+    )
 
 
 class ImportJobCreateResponse(BaseModel):
@@ -148,3 +169,34 @@ class SheetPreviewResponse(BaseModel):
     rows: list[list[Any]]
     header_row: int = Field(1, ge=1, description="Gợi ý dòng tiêu đề (1-based)")
     data_start_row: int = Field(2, ge=1, description="Gợi ý dòng dữ liệu đầu (1-based)")
+
+
+class ImportAnalysisMatchedField(BaseModel):
+    header: str | None = None
+    confidence: float = 0.0
+
+
+class ImportAnalysisResponse(BaseModel):
+    """Response for POST /import/analyze — Phase 1 Smart Gaps."""
+    matched_fields: dict[str, ImportAnalysisMatchedField]
+    missing_fields: list[str] = []
+    defaults_applied: dict[str, Any] = {}
+    total_rows: int = 0
+    has_embedded_images: bool = False
+    embedded_image_count: int = 0
+
+
+# --- Phase 3: AI Categorization ---
+
+class CategorizeRequest(BaseModel):
+    """Request body for POST /import/categorize."""
+    product_names: list[str] = Field(..., min_length=1, max_length=500)
+
+
+class CategorizeResponse(BaseModel):
+    """Response for POST /import/categorize."""
+    suggestions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of product_name → suggested_category",
+    )
+

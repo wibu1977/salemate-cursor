@@ -1,5 +1,6 @@
 import cloudinary
 import cloudinary.uploader
+from uuid import uuid4
 from app.config import get_settings
 
 settings = get_settings()
@@ -25,3 +26,25 @@ class StorageService:
             return result.get("secure_url", "")
         except Exception:
             return ""
+
+    @staticmethod
+    async def upload_product_image(
+        image_bytes: bytes, workspace_id: str, row_index: int
+    ) -> str:
+        """Upload a product image extracted from a spreadsheet to Cloudinary.
+
+        Images are auto-resized to 800×800 (keeping aspect ratio) and stored
+        under ``salemate/products/{workspace_id}/``.
+        """
+        try:
+            result = cloudinary.uploader.upload(
+                image_bytes,
+                folder=f"salemate/products/{workspace_id}",
+                public_id=f"import_row_{row_index}_{uuid4().hex[:8]}",
+                resource_type="image",
+                transformation=[{"width": 800, "height": 800, "crop": "limit"}],
+            )
+            return result.get("secure_url", "")
+        except Exception:
+            return ""
+

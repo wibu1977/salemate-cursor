@@ -224,6 +224,9 @@ export const inventoryApi = {
     range_a1?: string | null;
     column_mapping?: Record<string, string>;
     duplicate_strategy?: DuplicateStrategy;
+    ai_categories?: Record<string, string>;
+    default_overrides?: Record<string, any>;
+    manual_overrides?: Record<string, Record<string, any>>;
   }) => api.post<ImportJobSummaryResult>("/admin/inventory/import/sheets/validate", data),
   /** Dry-run validation for uploaded grids (rows từ bước preview). Corresponds POST /admin/inventory/import/validate. */
   validateImportGrid: (body: {
@@ -233,6 +236,9 @@ export const inventoryApi = {
     data_start_row: number;
     column_mapping?: Record<string, string>;
     duplicate_strategy?: DuplicateStrategy;
+    ai_categories?: Record<string, string>;
+    default_overrides?: Record<string, any>;
+    manual_overrides?: Record<string, Record<string, any>>;
   }) =>
     api.post<ImportJobSummaryResult>("/admin/inventory/import/validate", body),
   importSheets: (data: {
@@ -244,6 +250,9 @@ export const inventoryApi = {
     range_a1?: string | null;
     column_mapping?: Record<string, string>;
     duplicate_strategy?: DuplicateStrategy;
+    ai_categories?: Record<string, string>;
+    default_overrides?: Record<string, any>;
+    manual_overrides?: Record<string, Record<string, any>>;
   }) => api.post<{ job_id: string }>("/admin/inventory/import/sheets", data),
   importFilePreview: (file: File, maxRows: number = 50, entity: string = "products") => {
     const fd = new FormData();
@@ -256,6 +265,24 @@ export const inventoryApi = {
       data_start_row: number;
     }>("/admin/inventory/import/file/preview", fd);
   },
+  analyzeImportFile: (file: File, entity: string = "products") => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("entity", entity);
+    return api.post<{
+      matched_fields: Record<string, { header: string | null; confidence: number }>;
+      missing_fields: string[];
+      defaults_applied: Record<string, unknown>;
+      total_rows: number;
+      has_embedded_images: boolean;
+      embedded_image_count: number;
+    }>("/admin/inventory/import/analyze", fd);
+  },
+  categorizeProducts: (productNames: string[]) =>
+    api.post<{ suggestions: Record<string, string> }>(
+      "/admin/inventory/import/categorize",
+      { product_names: productNames },
+    ),
   importFile: (params: {
     file: File;
     entity?: string;
@@ -263,6 +290,9 @@ export const inventoryApi = {
     data_start_row: number;
     column_mapping?: Record<string, string>;
     duplicate_strategy?: DuplicateStrategy;
+    ai_categories?: Record<string, string>;
+    default_overrides?: Record<string, any>;
+    manual_overrides?: Record<string, Record<string, any>>;
   }) => {
     const fd = new FormData();
     fd.append("file", params.file);
@@ -273,6 +303,15 @@ export const inventoryApi = {
       fd.append("column_mapping", JSON.stringify(params.column_mapping));
     }
     fd.append("duplicate_strategy", params.duplicate_strategy ?? "update");
+    if (params.ai_categories && Object.keys(params.ai_categories).length) {
+      fd.append("ai_categories_json", JSON.stringify(params.ai_categories));
+    }
+    if (params.default_overrides && Object.keys(params.default_overrides).length) {
+      fd.append("default_overrides_json", JSON.stringify(params.default_overrides));
+    }
+    if (params.manual_overrides && Object.keys(params.manual_overrides).length) {
+      fd.append("manual_overrides_json", JSON.stringify(params.manual_overrides));
+    }
     return api.post<{ job_id: string }>("/admin/inventory/import/file", fd);
   },
   importJob: (jobId: string) =>

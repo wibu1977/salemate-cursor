@@ -61,7 +61,6 @@ QTY_KEYS = ("quantity", "số lượng", "so luong", "stock", "ton", "tồn")
 THRESHOLD_KEYS = ("threshold", "ngưỡng", "nguong", "stock_threshold")
 DESC_KEYS = ("description", "mô tả", "mo ta")
 IMAGE_KEYS = ("image", "ảnh", "anh", "image_url", "hình", "hinh")
-CATEGORY_KEYS = ("category", "danh mục", "danh muc", "loại", "loai", "nhóm", "nhom", "type")
 CATEGORY_KEYS = ("category", "danh mục", "danh muc", "type", "loại", "loai", "nhóm", "nhom")
 PHONE_KEYS = ("phone", "sđt", "sdt", "tel", "mobile", "điện thoại", "dien thoai")
 EMAIL_KEYS = ("email", "e-mail", "mail")
@@ -77,6 +76,15 @@ PRODUCT_FIELD_SPECS: dict[str, tuple[str, ...]] = {
     "category": CATEGORY_KEYS,
     "first_name": FIRST_NAME_KEYS,
     "last_name": LAST_NAME_KEYS,
+}
+
+# Smart defaults for missing columns — Phase 1: auto-fill
+FIELD_DEFAULTS: dict[str, int | str] = {
+    "quantity": 0,           # "Chưa nhập số lượng"
+    "stock_threshold": 5,    # Global safe default
+    "category": "",          # Will be filled by AI categorizer (Phase 3)
+    "description": "",       # Optional free-text
+    "image_url": "",         # Will be filled by image extractor (Phase 2)
 }
 
 CUSTOMER_FIELD_SPECS: dict[str, tuple[str, ...]] = {
@@ -372,6 +380,81 @@ def guess_header_data_rows_1based(rows: list[list[Any]], entity: str) -> tuple[i
     return 1, 2
 
 
+def analyze_file_structure(
+    content: bytes,
+    filename: str,
+    entity: str = "products",
+) -> dict[str, Any]:
+    """Analyze a file's structure: detect columns, missing fields, smart defaults, embedded images.
+
+    Returns a dict suitable for the ImportAnalysisResponse schema.
+    """
+    rows = parse_upload_to_rows(content, filename, max_rows=200)
+    if not rows:
+        return {
+            "matched_fields": {},
+            "missing_fields": [],
+            "defaults_applied": {},
+            "total_rows": 0,
+            "has_embedded_images": False,
+            "embedded_image_count": 0,
+        }
+
+    # detect header row
+    h1, d1 = guess_header_data_rows_1based(rows, entity)
+    header_idx = max(0, h1 - 1)
+    headers = [str(h or "") for h in rows[header_idx]] if header_idx < len(rows) else []
+
+    # fuzzy column matching
+    mapping = suggest_column_mapping(headers, entity)
+    matched: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+
+    # required + optional fields for products
+    product_fields = {"name", "price", "quantity", "stock_threshold", "description", "image_url", "category"}
+
+    for field in product_fields:
+        entry = mapping.get(field, {"header": None, "confidence": 0.0})
+        if entry.get("header") and entry.get("confidence", 0) > 0.5:
+            matched[field] = {"header": entry["header"], "confidence": entry["confidence"]}
+        else:
+            missing.append(field)
+
+    # smart defaults for missing fields (only optional ones)
+    defaults_applied: dict[str, int | str] = {}
+    for f in missing:
+        if f in FIELD_DEFAULTS:
+            defaults_applied[f] = FIELD_DEFAULTS[f]
+
+    # detect embedded images in XLSX
+    has_images = False
+    image_count = 0
+    name_lower = (filename or "").lower()
+    if name_lower.endswith(".xlsx"):
+        try:
+            import zipfile as _zf
+            bio = io.BytesIO(content)
+            with _zf.ZipFile(bio, "r") as zf:
+                media_files = [n for n in zf.namelist() if n.startswith("xl/media/")]
+                image_count = len(media_files)
+                has_images = image_count > 0
+        except Exception:
+            pass  # not a valid zip / corrupted — skip silently
+
+    # count data rows (excluding header)
+    all_rows = parse_upload_to_rows(content, filename, max_rows=None)
+    data_rows = max(0, len(all_rows) - (header_idx + 1))
+
+    return {
+        "matched_fields": matched,
+        "missing_fields": missing,
+        "defaults_applied": defaults_applied,
+        "total_rows": data_rows,
+        "has_embedded_images": has_images,
+        "embedded_image_count": image_count,
+    }
+
+
 def parse_upload_to_rows(content: bytes, filename: str, max_rows: int | None = None) -> list[list[Any]]:
     """Parse .csv, .xlsx, .xls thành rows_2d giống Google Sheets API."""
     name = (filename or "").lower()
@@ -544,6 +627,10 @@ async def import_products_from_values(
     duplicate_strategy: DuplicateStrategy = "update",
     dry_run: bool = False,
     error_sample_limit: int = 50,
+    extracted_images: dict[int, str] | None = None,
+    ai_categories: dict[str, str] | None = None,
+    default_overrides: dict[str, Any] | None = None,
+    manual_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if not rows_2d:
         raise ValueError("Sheet trống hoặc không có dữ liệu.")
@@ -577,9 +664,22 @@ async def import_products_from_values(
     col_desc = _find_col(hidx, DESC_KEYS, "description", column_mapping)
     col_image = _find_col(hidx, IMAGE_KEYS, "image_url", column_mapping)
     col_cat = _find_col(hidx, CATEGORY_KEYS, "category", column_mapping)
-    col_cat = _find_col(hidx, CATEGORY_KEYS, "category", column_mapping)
     col_first = _find_col(hidx, FIRST_NAME_KEYS, "first_name", column_mapping)
     col_last = _find_col(hidx, LAST_NAME_KEYS, "last_name", column_mapping)
+
+    # --- Phase 1: detect missing columns & track auto-fills ---
+    _col_lookup = {
+        "price": col_price, "quantity": col_qty, "stock_threshold": col_thr,
+        "description": col_desc, "image_url": col_image, "category": col_cat,
+    }
+    missing_fields: list[str] = [f for f, c in _col_lookup.items() if c is None]
+    
+    # Merge global defaults with user overrides
+    auto_filled: dict[str, Any] = {f: FIELD_DEFAULTS[f] for f in missing_fields if f in FIELD_DEFAULTS}
+    if default_overrides:
+        for f, val in default_overrides.items():
+            if val is not None and str(val).strip():
+                auto_filled[f] = val
 
     created, updated, skipped, errors = 0, 0, 0, []
     error_records: list[dict[str, Any]] = []
@@ -596,9 +696,9 @@ async def import_products_from_values(
             if not name:
                 continue
 
-            price_s = _cell(row, col_price) if col_price is not None else "0"
-            qty_s = _cell(row, col_qty) if col_qty is not None else "0"
-            thr_s = _cell(row, col_thr) if col_thr is not None else "5"
+            price_s = _cell(row, col_price) if col_price is not None else str(auto_filled.get("price", "0"))
+            qty_s = _cell(row, col_qty) if col_qty is not None else str(auto_filled.get("quantity", "0"))
+            thr_s = _cell(row, col_thr) if col_thr is not None else str(auto_filled.get("stock_threshold", "5"))
             price = parse_price(price_s)
             quantity = parse_price(qty_s)  # int cỡ số nguyên
             threshold = parse_price(thr_s)
@@ -607,10 +707,27 @@ async def import_products_from_values(
             if threshold < 0:
                 threshold = 5
 
-            desc = _cell(row, col_desc) if col_desc is not None else ""
-            img_url = _cell(row, col_image) if col_image is not None else ""
-            cat = _cell(row, col_cat) if col_cat is not None else ""
-            cat = _cell(row, col_cat) if col_cat is not None else ""
+            desc = _cell(row, col_desc) if col_desc is not None else str(auto_filled.get("description", ""))
+            img_url = _cell(row, col_image) if col_image is not None else str(auto_filled.get("image_url", ""))
+            # Phase 2: use extracted image if no explicit URL in the cell
+            if not img_url and extracted_images:
+                # row_0based is the absolute row index in the spreadsheet
+                row_0based = data_start_index + rel_idx
+                img_url = extracted_images.get(row_0based, "")
+            cat = _cell(row, col_cat) if col_cat is not None else str(auto_filled.get("category", ""))
+            # Phase 3: AI categories (suggestions or manual overrides) take priority
+            if ai_categories and name in ai_categories:
+                cat = ai_categories[name]
+            
+            # --- Phase 4: Manual Overrides (Highest Priority) ---
+            if manual_overrides and name in manual_overrides:
+                ovr = manual_overrides[name]
+                if "category" in ovr: cat = ovr["category"]
+                if "price" in ovr: price = parse_price(ovr["price"])
+                if "quantity" in ovr: quantity = parse_price(ovr["quantity"])
+                if "stock_threshold" in ovr: threshold = parse_price(ovr["stock_threshold"])
+                if "description" in ovr: desc = ovr["description"]
+                if "image_url" in ovr: img_url = ovr["image_url"]
             extra = _row_import_extra(row, headers_row, column_mapping)
             meta_payload = None
             if extra:
@@ -688,6 +805,9 @@ async def import_products_from_values(
         "errors_total": len(errors),
         "error_csv": err_csv,
         "dry_run": dry_run,
+        # Phase 1: smart-defaults metadata
+        "missing_fields": missing_fields,
+        "auto_filled_fields": auto_filled,
     }
 
 
@@ -833,6 +953,9 @@ async def run_import_for_workspace(
     *,
     duplicate_strategy: DuplicateStrategy = "update",
     dry_run: bool = False,
+    ai_categories: dict[str, str] | None = None,
+    default_overrides: dict[str, Any] | None = None,
+    manual_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     spreadsheet_id = _extract_spreadsheet_id(spreadsheet_id)
     values = await fetch_sheet_values(db, workspace, spreadsheet_id, sheet_name, range_a1)
@@ -860,6 +983,9 @@ async def run_import_for_workspace(
         column_mapping,
         duplicate_strategy=duplicate_strategy,
         dry_run=dry_run,
+        ai_categories=ai_categories,
+        default_overrides=default_overrides,
+        manual_overrides=manual_overrides,
     )
 
 
@@ -875,6 +1001,9 @@ async def import_from_file_bytes(
     *,
     duplicate_strategy: DuplicateStrategy = "update",
     dry_run: bool = False,
+    ai_categories: dict[str, str] | None = None,
+    default_overrides: dict[str, Any] | None = None,
+    manual_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     values = parse_upload_to_rows(content, filename, max_rows=None)
     h_idx = max(0, header_row_1based - 1)
@@ -891,6 +1020,36 @@ async def import_from_file_bytes(
             duplicate_strategy=duplicate_strategy,
             dry_run=dry_run,
         )
+
+    # --- Phase 2: extract & upload embedded images (XLSX only) ---
+    extracted_images: dict[int, str] | None = None
+    name_lower = (filename or "").lower()
+    if name_lower.endswith(".xlsx") and not dry_run:
+        try:
+            from app.services.image_extractor import (
+                extract_images_from_xlsx,
+                upload_and_map,
+            )
+            raw_images = extract_images_from_xlsx(
+                content, data_start_row_0based=d_idx,
+            )
+            if raw_images:
+                extracted_images = await upload_and_map(
+                    raw_images, str(workspace_id),
+                )
+                logger.info(
+                    "Extracted %d images, uploaded %d for workspace %s",
+                    len(raw_images),
+                    len(extracted_images or {}),
+                    workspace_id,
+                )
+        except Exception:
+            logger.warning(
+                "Image extraction failed for %s — continuing without images",
+                filename,
+                exc_info=True,
+            )
+
     return await import_products_from_values(
         db,
         workspace_id,
@@ -900,4 +1059,9 @@ async def import_from_file_bytes(
         column_mapping,
         duplicate_strategy=duplicate_strategy,
         dry_run=dry_run,
+        extracted_images=extracted_images,
+        ai_categories=ai_categories,
+        default_overrides=default_overrides,
+        manual_overrides=manual_overrides,
     )
+

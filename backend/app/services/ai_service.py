@@ -333,7 +333,8 @@ class AIService:
 
         products = await RAGService.search_products(db, workspace_id, user_text)
         product_list = "\n".join(
-            f"- {p.name}: {p.price:,} {p.currency} (còn {p.quantity})"
+            f"- {p.name} [{p.category or 'chung'}]: {p.price:,} {p.currency} "
+            f"(còn {p.quantity}) — {(p.description or '')[:80]}"
             for p in products
         ) or "Chưa có sản phẩm nào."
 
