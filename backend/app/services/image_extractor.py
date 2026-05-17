@@ -10,6 +10,9 @@ sequential order (image 1 → data row 1, image 2 → data row 2, …).
 The companion ``upload_and_map`` helper pushes each extracted image
 to Cloudinary via ``StorageService`` and returns
 ``{data_row_index: cloudinary_url}``.
+
+*worksheet_title*: when set, read images only from that tab (recommended
+when the XLSX has multiple worksheets, e.g. Google Drive spreadsheet export).
 """
 
 from __future__ import annotations
@@ -22,6 +25,39 @@ from typing import Any
 logger = logging.getLogger("salemate.image_extractor")
 
 
+def _select_worksheet(wb: Any, worksheet_title: str | None) -> Any:
+    """Pick worksheet tab (exported Google Sheets tab names align with workbook sheet titles)."""
+    if worksheet_title and str(worksheet_title).strip():
+        t = str(worksheet_title).strip()
+        if t in wb.sheetnames:
+            return wb[t]
+        tl = t.lower()
+        for name in wb.sheetnames:
+            if str(name).strip().lower() == tl:
+                return wb[name]
+    return wb.active or wb.worksheets[0]
+
+
+def _image_bytes(img: Any, raw_media: dict[str, bytes]) -> bytes | None:
+    """Resolve drawing image object to ``xl/media/`` bytes (or PIL fallback)."""
+    ref = getattr(img, "path", None) or getattr(img, "ref", "")
+    candidates = [ref, f"xl/{ref}", ref.replace("../", "xl/")]
+    img_bytes: bytes | None = None
+    for c in candidates:
+        if c in raw_media:
+            img_bytes = raw_media[c]
+            break
+
+    if img_bytes is None:
+        try:
+            buf = io.BytesIO()
+            img.image.save(buf, format=img.image.format or "PNG")
+            img_bytes = buf.getvalue()
+        except Exception:
+            return None
+    return img_bytes
+
+
 # ---------------------------------------------------------------------------
 # Low-level extraction
 # ---------------------------------------------------------------------------
@@ -30,6 +66,7 @@ def extract_images_from_xlsx(
     content: bytes,
     *,
     data_start_row_0based: int = 1,
+    worksheet_title: str | None = None,
 ) -> dict[int, bytes]:
     """Return ``{data_row_0based: image_bytes}`` for every embedded image.
 
@@ -68,55 +105,49 @@ def extract_images_from_xlsx(
         import openpyxl  # type: ignore[import-untyped]
 
         wb = openpyxl.load_workbook(bio, data_only=True)
-        ws = wb.active or wb.worksheets[0]
+        try:
+            ws = _select_worksheet(wb, worksheet_title)
 
-        # openpyxl stores images as ``openpyxl.drawing.image.Image`` objects
-        # in ``ws._images``.  Each has an ``anchor`` that holds the cell ref.
-        mapped: dict[int, bytes] = {}
-        for img in getattr(ws, "_images", []):
-            anchor = getattr(img, "anchor", None)
-            if anchor is None:
-                continue
-            # ``_from`` attribute holds a ``AnchorMarker`` with ``.row``
-            from_marker = getattr(anchor, "_from", None) or getattr(anchor, "anchorFrom", None)
-            if from_marker is None:
-                continue
-            row_0 = getattr(from_marker, "row", None)
-            if row_0 is None:
-                continue
-            row_0 = int(row_0)
-
-            # Read actual image bytes.  ``img.ref`` is the path inside the
-            # XLSX ZIP (e.g. ``xl/media/image1.png``).
-            ref = getattr(img, "path", None) or getattr(img, "ref", "")
-            # openpyxl >= 3.1 uses img.ref as the relative path – may or
-            # may not include the ``xl/`` prefix.
-            candidates = [ref, f"xl/{ref}", ref.replace("../", "xl/")]
-            img_bytes: bytes | None = None
-            for c in candidates:
-                if c in raw_media:
-                    img_bytes = raw_media[c]
-                    break
-
-            if img_bytes is None:
-                # last resort: try the image's internal blob (PIL)
-                try:
-                    buf = io.BytesIO()
-                    img.image.save(buf, format=img.image.format or "PNG")
-                    img_bytes = buf.getvalue()
-                except Exception:
+            mapped: dict[int, bytes] = {}
+            for img in getattr(ws, "_images", []):
+                anchor = getattr(img, "anchor", None)
+                if anchor is None:
                     continue
+                from_marker = getattr(anchor, "_from", None) or getattr(anchor, "anchorFrom", None)
+                if from_marker is None:
+                    continue
+                row_0 = getattr(from_marker, "row", None)
+                if row_0 is None:
+                    continue
+                row_0 = int(row_0)
 
-            if img_bytes and row_0 not in mapped:
-                mapped[row_0] = img_bytes
+                img_bytes = _image_bytes(img, raw_media)
+                if img_bytes and row_0 not in mapped:
+                    mapped[row_0] = img_bytes
 
-        wb.close()
+            if mapped:
+                logger.info(
+                    "Anchor-based extraction succeeded: %d images mapped",
+                    len(mapped),
+                )
+                return mapped
 
-        if mapped:
-            logger.info(
-                "Anchor-based extraction succeeded: %d images mapped", len(mapped)
-            )
-            return mapped
+            ws_images = list(getattr(ws, "_images", []) or [])
+            seq: dict[int, bytes] = {}
+            for idx, img in enumerate(ws_images):
+                b = _image_bytes(img, raw_media)
+                if b:
+                    seq[data_start_row_0based + idx] = b
+
+            if seq:
+                logger.info(
+                    "Sheet sequential image extraction: %d images → rows from %d",
+                    len(seq),
+                    data_start_row_0based,
+                )
+                return seq
+        finally:
+            wb.close()
 
     except Exception:
         logger.info(

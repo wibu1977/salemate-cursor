@@ -11,6 +11,7 @@ import uuid
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
+import httpx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -582,6 +583,53 @@ async def fetch_sheet_values(
         raise ValueError(_http_error_message(e)) from e
 
 
+_XLSX_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+async def fetch_spreadsheet_export_xlsx_bytes(
+    db: AsyncSession,
+    workspace: Workspace,
+    spreadsheet_id: str,
+    *,
+    timeout_s: float = 120.0,
+) -> bytes:
+    """Export a Google Spreadsheet as XLSX via Drive API (embedded images → ``xl/media``)."""
+    sid = _extract_spreadsheet_id(spreadsheet_id)
+    access = await ensure_valid_access_token(db, workspace)
+    export_url = f"https://www.googleapis.com/drive/v3/files/{sid}/export"
+
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            export_url,
+            params={"mimeType": _XLSX_EXPORT_MIME},
+            headers={"Authorization": f"Bearer {access}"},
+            timeout=timeout_s,
+        )
+        if r.status_code == 403:
+            logger.warning(
+                "Drive export forbidden spreadsheet_id=%s body=%s", sid, r.text[:400]
+            )
+            raise ValueError(
+                "Google từ chối export bảng tính để đọc ảnh. Hãy ngắt kết nối và "
+                "kết nối lại Google (cần quyền đọc Drive), và bật Google Drive API trên GCP."
+            ) from None
+        if r.status_code >= 400:
+            logger.warning(
+                "Drive export failed %s spreadsheet_id=%s body=%s",
+                r.status_code,
+                sid,
+                r.text[:400],
+            )
+            raise ValueError(
+                f"Export Google Sheet sang XLSX thất bại (HTTP {r.status_code})."
+            ) from None
+        content = r.content
+
+    if len(content) < 64:
+        raise ValueError("Export Google Sheet trả dữ liệu quá nhỏ — không hợp lệ.")
+    return content
+
+
 def _http_error_message(e: HttpError) -> str:
     msg = str(e)
     if e.resp.status == 403:
@@ -708,12 +756,14 @@ async def import_products_from_values(
                 threshold = 5
 
             desc = _cell(row, col_desc) if col_desc is not None else str(auto_filled.get("description", ""))
-            img_url = _cell(row, col_image) if col_image is not None else str(auto_filled.get("image_url", ""))
-            # Phase 2: use extracted image if no explicit URL in the cell
-            if not img_url and extracted_images:
-                # row_0based is the absolute row index in the spreadsheet
-                row_0based = data_start_index + rel_idx
-                img_url = extracted_images.get(row_0based, "")
+            cell_img_url = (
+                _cell(row, col_image) if col_image is not None else str(auto_filled.get("image_url", ""))
+            )
+            row_0based_excel = data_start_index + rel_idx
+            extracted_url = ""
+            if extracted_images:
+                extracted_url = extracted_images.get(row_0based_excel, "") or ""
+            img_url = extracted_url or cell_img_url
             cat = _cell(row, col_cat) if col_cat is not None else str(auto_filled.get("category", ""))
             # Phase 3: AI categories (suggestions or manual overrides) take priority
             if ai_categories and name in ai_categories:
@@ -963,6 +1013,38 @@ async def run_import_for_workspace(
     d_idx = max(h_idx + 1, data_start_row_1based - 1)
 
     entity_norm = (entity or "products").lower()
+
+    extracted_images: dict[int, str] | None = None
+    products_entity = entity_norm not in ("customer", "customers", "khach", "khách")
+    if products_entity and not dry_run:
+        try:
+            xlsx_blob = await fetch_spreadsheet_export_xlsx_bytes(
+                db,
+                workspace,
+                spreadsheet_id,
+            )
+            from app.services.image_extractor import extract_images_from_xlsx, upload_and_map
+
+            raw_images = extract_images_from_xlsx(
+                xlsx_blob,
+                data_start_row_0based=d_idx,
+                worksheet_title=sheet_name,
+            )
+            if raw_images:
+                extracted_images = await upload_and_map(raw_images, str(workspace.id))
+                logger.info(
+                    "Google Sheets (Drive export): extracted %d images, uploaded %d (tab=%r)",
+                    len(raw_images),
+                    len(extracted_images or {}),
+                    sheet_name,
+                )
+        except Exception:
+            logger.warning(
+                "Google Sheet embedded-image sync skipped (Drive export/XLSX); "
+                "text import continues. Reconnect Google if Drive scope missing.",
+                exc_info=True,
+            )
+
     if entity_norm in ("customer", "customers", "khach", "khách"):
         return await import_customers_from_values(
             db,
@@ -983,6 +1065,7 @@ async def run_import_for_workspace(
         column_mapping,
         duplicate_strategy=duplicate_strategy,
         dry_run=dry_run,
+        extracted_images=extracted_images,
         ai_categories=ai_categories,
         default_overrides=default_overrides,
         manual_overrides=manual_overrides,
