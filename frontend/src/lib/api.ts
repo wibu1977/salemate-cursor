@@ -170,6 +170,22 @@ export const inventoryApi = {
     api.post("/admin/inventory/products", data),
   updateProduct: (id: string, data: Record<string, unknown>) =>
     api.patch(`/admin/inventory/products/${id}`, data),
+  uploadProductImage: (productId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<{
+      id: string;
+      image_url: string | null;
+      name: string;
+      description: string | null;
+      category: string | null;
+      price: number;
+      currency: string;
+      quantity: number;
+      stock_threshold: number;
+      is_active: boolean;
+    }>(`/admin/inventory/products/${productId}/image`, fd);
+  },
   sheetTabs: (spreadsheetId: string) =>
     api.get<{ titles: string[] }>(
       `/admin/inventory/google/spreadsheets/tabs`,
@@ -300,7 +316,7 @@ export const inventoryApi = {
     fd.append("header_row", String(params.header_row));
     fd.append("data_start_row", String(params.data_start_row));
     if (params.column_mapping && Object.keys(params.column_mapping).length) {
-      fd.append("column_mapping", JSON.stringify(params.column_mapping));
+      fd.append("column_mapping_json", JSON.stringify(params.column_mapping));
     }
     fd.append("duplicate_strategy", params.duplicate_strategy ?? "update");
     if (params.ai_categories && Object.keys(params.ai_categories).length) {

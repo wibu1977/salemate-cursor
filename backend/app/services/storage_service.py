@@ -48,3 +48,20 @@ class StorageService:
         except Exception:
             return ""
 
+    @staticmethod
+    async def upload_product_image_for_id(
+        image_bytes: bytes, workspace_id: str, product_id: str
+    ) -> str:
+        """Upload a catalog product photo (manual / camera); returns Cloudinary HTTPS URL."""
+        try:
+            result = cloudinary.uploader.upload(
+                image_bytes,
+                folder=f"salemate/products/{workspace_id}",
+                public_id=f"product_{product_id}_{uuid4().hex[:12]}",
+                resource_type="image",
+                transformation=[{"width": 800, "height": 800, "crop": "limit"}],
+            )
+            return result.get("secure_url", "")
+        except Exception:
+            return ""
+

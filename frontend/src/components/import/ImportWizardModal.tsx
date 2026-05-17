@@ -421,6 +421,10 @@ export function ImportWizardModal({ open, onClose, googleStatus }: ImportWizardM
                     </div>
                   </div>
                 )}
+                <p className="text-[10px] font-semibold leading-relaxed text-slate-500 px-1">
+                  <strong>Ảnh:</strong> Google Sheets chỉ nhập được nếu có <strong>cột URL dạng text</strong> (hoặc kết quả công thức là URL).
+                  Ảnh chèn trực tiếp vào ô không được API đọc — dùng file <strong>XLSX có ảnh nhúng</strong> hoặc thêm ảnh sau khi nhập trong &quot;Kho hàng&quot;.
+                </p>
               </div>
             )}
           </div>

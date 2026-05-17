@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inventoryApi, googleAuthApi, pollImportJob, formatApiError, type DuplicateStrategy } from "@/lib/api";
 import { pickGoogleSpreadsheet } from "@/lib/googlePicker";
@@ -30,6 +30,7 @@ import {
   Download,
 } from "lucide-react";
 import { ImportWizardModal } from "@/components/import/ImportWizardModal";
+import { ProductImageUpload } from "@/components/inventory/ProductImageUpload";
 
 interface ProductData {
   id: string;
@@ -64,6 +65,8 @@ export default function InventoryPage() {
     image_url: "",
   });
 
+  const [pendingProductImageFile, setPendingProductImageFile] = useState<File | null>(null);
+
   const { data: productsData, isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: () => inventoryApi.getProducts(),
@@ -95,11 +98,26 @@ export default function InventoryPage() {
   }, [products, searchQuery]);
 
   const createMutation = useMutation({
-    mutationFn: inventoryApi.createProduct,
+    mutationFn: async (vars: { body: typeof form; pendingImage: File | null }) => {
+      const res = await inventoryApi.createProduct(vars.body);
+      const created = res.data as ProductData;
+      if (vars.pendingImage && created?.id) {
+        try {
+          await inventoryApi.uploadProductImage(created.id, vars.pendingImage);
+        } catch (e) {
+          toast(
+            `${formatApiError(e)} — Sản phẩm đã tạo; ảnh chưa tải được (mở chỉnh sửa và thử lại).`,
+            "error",
+          );
+        }
+      }
+      return created;
+    },
     onSuccess: () => {
       toast("Đã tạo sản phẩm mới", "success");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setShowCreate(false);
+      setPendingProductImageFile(null);
     },
     onError: (e) => toast(formatApiError(e), "error"),
   });
@@ -115,6 +133,7 @@ export default function InventoryPage() {
   });
 
   const openEdit = (p: ProductData) => {
+    setPendingProductImageFile(null);
     setEditProduct(p);
     setForm({
       name: p.name,
@@ -130,6 +149,7 @@ export default function InventoryPage() {
 
   const openCreate = () => {
     setEditProduct(null);
+    setPendingProductImageFile(null);
     setForm({
       name: "",
       description: "",
@@ -357,7 +377,11 @@ export default function InventoryPage() {
       {/* Form Modal */}
       <Modal
         open={showCreate || !!editProduct}
-        onClose={() => { setShowCreate(false); setEditProduct(null); }}
+        onClose={() => {
+          setShowCreate(false);
+          setEditProduct(null);
+          setPendingProductImageFile(null);
+        }}
         title={editProduct ? "CHỈNH SỬA SẢN PHẨM" : "SẢN PHẨM MỚI"}
         size="lg"
       >
@@ -366,19 +390,14 @@ export default function InventoryPage() {
           <div className="lg:col-span-5 space-y-8">
             <div className="space-y-4">
               <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 px-2">Hình ảnh đại diện</h4>
-              <div className="group relative aspect-square w-full overflow-hidden rounded-[2.5rem] border-8 border-slate-50 bg-slate-100 shadow-2xl shadow-slate-200 transition-all hover:shadow-accent/15/50">
-                {form.image_url ? (
-                  <img src={form.image_url} alt="Preview" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-4 text-slate-300">
-                    <ImageIcon className="h-16 w-16" />
-                    <p className="text-xs font-black uppercase tracking-widest">Chưa có ảnh</p>
-                  </div>
-                )}
-                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <span className="text-xs font-black text-white border-2 border-white/50 rounded-full px-6 py-2 backdrop-blur-sm">CẬP NHẬT ẢNH</span>
-                </div>
-              </div>
+              <ProductImageUpload
+                productId={editProduct?.id ?? null}
+                imageUrl={form.image_url}
+                onImageUrlChange={(url) => setForm((f) => ({ ...f, image_url: url }))}
+                pendingFile={pendingProductImageFile}
+                onPendingFileChange={setPendingProductImageFile}
+                disabled={createMutation.isPending || updateMutation.isPending}
+              />
             </div>
 
             <div className="rounded-3xl bg-accent-soft/50 p-6 space-y-4">
@@ -444,10 +463,10 @@ export default function InventoryPage() {
               />
 
               <Field 
-                label="Đường dẫn ảnh (URL)" 
+                label="Đường dẫn ảnh (URL — tùy chọn)" 
                 value={form.image_url} 
                 onChange={(v) => setForm({ ...form, image_url: v })} 
-                placeholder="https://images.unsplash.com/photo-..."
+                placeholder="https://..."
                 icon={<ImageIcon className="h-5 w-5" />}
               />
             </div>
@@ -464,7 +483,10 @@ export default function InventoryPage() {
                   if (editProduct) {
                     updateMutation.mutate({ id: editProduct.id, data: form });
                   } else {
-                    createMutation.mutate(form);
+                    createMutation.mutate({
+                      body: form,
+                      pendingImage: pendingProductImageFile,
+                    });
                   }
                 }}
                 disabled={!form.name || createMutation.isPending || updateMutation.isPending}

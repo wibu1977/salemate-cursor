@@ -84,6 +84,41 @@ async def update_product(
     return await InventoryService.update_product(db, workspace_id, product_id, payload)
 
 
+_MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/products/{product_id}/image", response_model=ProductResponse)
+async def upload_product_image(
+    product_id: uuid.UUID,
+    file: UploadFile = File(...),
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a catalog product image (multipart) → Cloudinary → ``image_url``."""
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="Chỉ chấp nhận file ảnh (image/*).",
+        )
+    raw = await file.read()
+    if len(raw) > _MAX_PRODUCT_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="Ảnh quá lớn (tối đa ~10 MB).",
+        )
+    if not raw:
+        raise HTTPException(status_code=400, detail="File trống.")
+    try:
+        return await InventoryService.upload_product_photo(
+            db, workspace_id, product_id, raw
+        )
+    except ValueError as e:
+        detail = str(e)
+        status = 404 if detail == "Product not found" else 503
+        raise HTTPException(status_code=status, detail=detail) from e
+
+
 @router.get("/google/spreadsheets/tabs", response_model=SheetTabsResponse)
 async def spreadsheet_tabs(
     spreadsheet_id: str,

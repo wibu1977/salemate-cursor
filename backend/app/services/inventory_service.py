@@ -66,6 +66,41 @@ class InventoryService:
         return product
 
     @staticmethod
+    async def upload_product_photo(
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        product_id: uuid.UUID,
+        image_bytes: bytes,
+    ) -> Product:
+        """Push bytes to Cloudinary and set ``product.image_url``."""
+        stmt = select(Product).where(
+            Product.id == product_id,
+            Product.workspace_id == workspace_id,
+        )
+        result = await db.execute(stmt)
+        product = result.scalar_one_or_none()
+        if not product:
+            raise ValueError("Product not found")
+
+        from app.services.storage_service import StorageService
+
+        url = await StorageService.upload_product_image_for_id(
+            image_bytes,
+            str(workspace_id),
+            str(product_id),
+        )
+        if not (url or "").strip():
+            raise ValueError(
+                "Tải ảnh thất bại. Kiểm tra CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, "
+                "CLOUDINARY_API_SECRET trên máy chủ."
+            )
+
+        product.image_url = url.strip()
+        await db.commit()
+        await db.refresh(product)
+        return product
+
+    @staticmethod
     async def _update_embedding(db: AsyncSession, product: Product):
         """Generate and store product embedding for RAG search."""
         try:

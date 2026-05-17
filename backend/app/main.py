@@ -31,6 +31,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
 
+    if not (
+        (settings.CLOUDINARY_CLOUD_NAME or "").strip()
+        and (settings.CLOUDINARY_API_KEY or "").strip()
+        and (settings.CLOUDINARY_API_SECRET or "").strip()
+    ):
+        logger.warning(
+            "Cloudinary env không đầy đủ (CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / "
+            "CLOUDINARY_API_SECRET). Ảnh import XLSX và upload sản phẩm sẽ trả URL rỗng."
+        )
+
     yield
 
 
