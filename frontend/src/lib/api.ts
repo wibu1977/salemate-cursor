@@ -170,6 +170,8 @@ export const inventoryApi = {
     api.post("/admin/inventory/products", data),
   updateProduct: (id: string, data: Record<string, unknown>) =>
     api.patch(`/admin/inventory/products/${id}`, data),
+  deleteProduct: (id: string) =>
+    api.delete(`/admin/inventory/products/${id}`),
   uploadProductImage: (productId: string, file: File) => {
     const fd = new FormData();
     fd.append("file", file);

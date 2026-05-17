@@ -14,7 +14,8 @@ import {
   RefreshCw, 
   Table as TableIcon, 
   Search, 
-  Edit3, 
+  Edit3,
+  Trash2,
   Box,
   Image as ImageIcon,
   Filter,
@@ -128,6 +129,20 @@ export default function InventoryPage() {
       toast("Đã cập nhật sản phẩm", "success");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setEditProduct(null);
+    },
+    onError: (e) => toast(formatApiError(e), "error"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => inventoryApi.deleteProduct(id),
+    onSuccess: (_data, deletedId) => {
+      toast("Đã xóa sản phẩm", "success");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      if (editProduct?.id === deletedId) {
+        setEditProduct(null);
+        setShowCreate(false);
+        setPendingProductImageFile(null);
+      }
     },
     onError: (e) => toast(formatApiError(e), "error"),
   });
@@ -272,7 +287,9 @@ export default function InventoryPage() {
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Giá bán</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tồn kho</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Trạng thái</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400"></th>
+                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">
+                    Thao tác
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -342,12 +359,39 @@ export default function InventoryPage() {
                               )}
                             </td>
                             <td className="px-8 py-6 text-right">
-                              <button 
-                                onClick={() => openEdit(p)} 
-                                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 transition-all hover:bg-accent hover:text-white"
-                              >
-                                <Edit3 className="h-5 w-5" />
-                              </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(p)}
+                                  disabled={deleteMutation.isPending}
+                                  className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 transition-all hover:bg-accent hover:text-white disabled:opacity-50"
+                                  aria-label="Chỉnh sửa"
+                                >
+                                  <Edit3 className="h-5 w-5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      !window.confirm(
+                                        `Xóa sản phẩm "${p.name}"? Hành động này không thể hoàn tác.`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    deleteMutation.mutate(p.id);
+                                  }}
+                                  disabled={
+                                    deleteMutation.isPending ||
+                                    createMutation.isPending ||
+                                    updateMutation.isPending
+                                  }
+                                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-slate-50 px-4 text-[10px] font-black uppercase tracking-widest text-rose-500 ring-1 ring-rose-100 transition-all hover:bg-rose-600 hover:text-white hover:ring-rose-600 disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-4 w-4 shrink-0" />
+                                  Xóa
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -396,7 +440,7 @@ export default function InventoryPage() {
                 onImageUrlChange={(url) => setForm((f) => ({ ...f, image_url: url }))}
                 pendingFile={pendingProductImageFile}
                 onPendingFileChange={setPendingProductImageFile}
-                disabled={createMutation.isPending || updateMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
               />
             </div>
 
@@ -489,10 +533,19 @@ export default function InventoryPage() {
                     });
                   }
                 }}
-                disabled={!form.name || createMutation.isPending || updateMutation.isPending}
+                disabled={
+                  !form.name ||
+                  createMutation.isPending ||
+                  updateMutation.isPending ||
+                  deleteMutation.isPending
+                }
                 className="ai-glow flex-[2] rounded-2xl bg-accent py-4 text-sm font-black text-white shadow-2xl shadow-accent/20 transition-all hover:bg-accent-hover hover:-translate-y-1 active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em]"
               >
-                {createMutation.isPending || updateMutation.isPending ? "ĐANG LƯU..." : editProduct ? "Lưu thay đổi" : "Tạo sản phẩm"}
+                {createMutation.isPending || updateMutation.isPending
+                  ? "ĐANG LƯU..."
+                  : editProduct
+                    ? "Lưu thay đổi"
+                    : "Tạo sản phẩm"}
               </button>
             </div>
           </div>

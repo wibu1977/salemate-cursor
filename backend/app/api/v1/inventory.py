@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +82,21 @@ async def update_product(
     db: AsyncSession = Depends(get_db),
 ):
     return await InventoryService.update_product(db, workspace_id, product_id, payload)
+
+
+@router.delete("/products/{product_id}", status_code=204)
+async def delete_product(
+    product_id: uuid.UUID,
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await InventoryService.delete_product(db, workspace_id, product_id)
+    except ValueError as e:
+        if str(e) == "Product not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(status_code=204)
 
 
 _MAX_PRODUCT_IMAGE_BYTES = 10 * 1024 * 1024

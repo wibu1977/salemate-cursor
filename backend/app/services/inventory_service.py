@@ -1,10 +1,11 @@
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.inventory import Product
+from app.models.order import OrderItem
 from app.schemas.inventory import ProductCreate, ProductUpdate
 from app.services.notification_service import NotificationService
 
@@ -99,6 +100,33 @@ class InventoryService:
         await db.commit()
         await db.refresh(product)
         return product
+
+    @staticmethod
+    async def delete_product(
+        db: AsyncSession,
+        workspace_id: uuid.UUID,
+        product_id: uuid.UUID,
+    ) -> None:
+        stmt = select(Product.id).where(
+            Product.id == product_id,
+            Product.workspace_id == workspace_id,
+        )
+        exists = await db.execute(stmt)
+        if exists.scalar_one_or_none() is None:
+            raise ValueError("Product not found")
+
+        await db.execute(
+            update(OrderItem)
+            .where(OrderItem.product_id == product_id)
+            .values(product_id=None),
+        )
+        await db.execute(
+            delete(Product).where(
+                Product.id == product_id,
+                Product.workspace_id == workspace_id,
+            ),
+        )
+        await db.commit()
 
     @staticmethod
     async def _update_embedding(db: AsyncSession, product: Product):
