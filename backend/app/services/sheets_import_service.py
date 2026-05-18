@@ -1041,7 +1041,13 @@ async def run_import_for_workspace(
         except ValueError:
             # Re-raise known errors (like 403 Forbidden for missing Drive scopes)
             # so the background job fails and the user sees the message in the UI.
-            raise
+            # UPDATE: As requested, we swallow this error to allow text-only import to continue
+            # without requiring the user to have drive.readonly scopes approved immediately.
+            logger.warning(
+                "Google Sheet embedded-image sync skipped (Drive export/XLSX) due to ValueError (likely 403 Forbidden); "
+                "text import continues. Reconnect Google if Drive scope missing.",
+                exc_info=True,
+            )
         except Exception:
             logger.warning(
                 "Google Sheet embedded-image sync skipped (Drive export/XLSX); "

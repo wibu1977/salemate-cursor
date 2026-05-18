@@ -474,13 +474,31 @@ export default function InventoryPage() {
                   onChange={(v) => setForm({ ...form, category: v })} 
                   placeholder="Thực phẩm"
                 />
-                <Field 
-                  label="Giá bán (KRW)" 
-                  value={String(form.price)} 
-                  onChange={(v) => setForm({ ...form, price: Number(v) || 0 })} 
-                  type="number" 
-                  icon={<DollarSign className="h-5 w-5" />}
-                />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Giá bán</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">
+                        <DollarSign className="h-5 w-5" />
+                      </div>
+                      <input
+                        type="number"
+                        value={String(form.price)}
+                        onChange={(e) => setForm({ ...form, price: Number(e.target.value) || 0 })}
+                        className="w-full rounded-[1.5rem] border-none bg-slate-50/50 pl-14 py-4 text-sm font-semibold shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent"
+                      />
+                    </div>
+                    <select
+                      value={form.currency}
+                      onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                      className="w-24 rounded-[1.5rem] border-none bg-slate-50/50 px-4 py-4 text-sm font-semibold shadow-inner outline-none ring-2 ring-transparent transition-all focus:bg-white focus:ring-accent text-slate-600"
+                    >
+                      <option value="KRW">KRW</option>
+                      <option value="USD">USD</option>
+                      <option value="VND">VND</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
