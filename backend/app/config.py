@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from pydantic import model_validator
@@ -89,7 +90,14 @@ class Settings(BaseSettings):
     # Railway / production: thêm nhanh CORS — các URL dashboard phân tách bởi dấu phẩy (vd. https://fe.up.railway.app)
     CORS_EXTRA_ORIGINS: str = ""
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # Resolve backend/.env regardless of cwd (uvicorn from repo root vs backend/).
+    _backend_env = Path(__file__).resolve().parent.parent / ".env"
+    model_config = {
+        "env_file": (
+            _backend_env if _backend_env.is_file() else Path(".env"),
+        ),
+        "env_file_encoding": "utf-8",
+    }
 
     @model_validator(mode="after")
     def jwt_secret_nonempty(self) -> "Settings":

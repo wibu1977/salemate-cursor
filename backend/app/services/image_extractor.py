@@ -1,8 +1,9 @@
 """Phase 2: Extract embedded images from XLSX files and map them to rows.
 
 XLSX files are ZIP archives with images stored under ``xl/media/``.
-We use ``openpyxl`` (already a dependency) to load the workbook in
-data-only mode and inspect each worksheet's ``_images`` list to resolve
+We use ``openpyxl`` (already a dependency) to load the workbook (not
+``data_only``) so drawing anchors stay intact, and inspect each worksheet's
+``_images`` list to resolve
 the anchor row for every image.  If the structured anchor lookup fails
 (some Excel builds use different anchor types), we fall back to
 sequential order (image 1 → data row 1, image 2 → data row 2, …).
@@ -36,6 +37,27 @@ def _select_worksheet(wb: Any, worksheet_title: str | None) -> Any:
             if str(name).strip().lower() == tl:
                 return wb[name]
     return wb.active or wb.worksheets[0]
+
+
+def _resolve_worksheet_for_images(wb: Any, worksheet_title: str | None) -> Any:
+    """Use the requested sheet when it has drawings; otherwise first sheet that does.
+
+    Drive-exported XLSX often opens with ``wb.active`` that does not match the tab the
+    user imported; matching by title can still yield a sheet with empty ``_images`` while
+    another tab holds the embedded pictures.
+    """
+    primary = _select_worksheet(wb, worksheet_title)
+    if getattr(primary, "_images", None):
+        return primary
+    for ws in wb.worksheets:
+        if getattr(ws, "_images", None):
+            logger.info(
+                "Sheet %r has no drawings; using %r for embedded images",
+                getattr(primary, "title", "?"),
+                getattr(ws, "title", "?"),
+            )
+            return ws
+    return primary
 
 
 def _image_bytes(img: Any, raw_media: dict[str, bytes]) -> bytes | None:
@@ -104,9 +126,11 @@ def extract_images_from_xlsx(
     try:
         import openpyxl  # type: ignore[import-untyped]
 
-        wb = openpyxl.load_workbook(bio, data_only=True)
+        # ``data_only=False`` keeps drawing/image relationships stable on some exports
+        # (Google Sheets → XLSX). Values are irrelevant here.
+        wb = openpyxl.load_workbook(bio, data_only=False)
         try:
-            ws = _select_worksheet(wb, worksheet_title)
+            ws = _resolve_worksheet_for_images(wb, worksheet_title)
 
             mapped: dict[int, bytes] = {}
             for img in getattr(ws, "_images", []):
@@ -126,11 +150,21 @@ def extract_images_from_xlsx(
                     mapped[row_0] = img_bytes
 
             if mapped:
+                aligned = {
+                    r: b for r, b in mapped.items() if r >= data_start_row_0based
+                }
+                if aligned:
+                    logger.info(
+                        "Anchor-based extraction succeeded: %d images mapped to data rows",
+                        len(aligned),
+                    )
+                    return aligned
                 logger.info(
-                    "Anchor-based extraction succeeded: %d images mapped",
+                    "Anchor rows all precede data_start_row_0based=%s (%d anchors ignored); "
+                    "trying sequential / ZIP fallback",
+                    data_start_row_0based,
                     len(mapped),
                 )
-                return mapped
 
             ws_images = list(getattr(ws, "_images", []) or [])
             seq: dict[int, bytes] = {}
@@ -156,9 +190,12 @@ def extract_images_from_xlsx(
         )
 
     # ----- Fallback: sequential mapping --------------------------------
-    # Sort media files by name (image1.png, image2.png, …) and assign to
-    # consecutive data rows.
-    sorted_names = sorted(raw_media.keys())
+    import re
+    def _extract_num(name: str) -> int:
+        m = re.search(r'\d+', name)
+        return int(m.group()) if m else 0
+
+    sorted_names = sorted(raw_media.keys(), key=_extract_num)
     sequential: dict[int, bytes] = {}
     for idx, name in enumerate(sorted_names):
         row_0 = data_start_row_0based + idx
@@ -199,4 +236,10 @@ async def upload_and_map(
             logger.warning("Failed to upload image for row %d", row_idx, exc_info=True)
 
     logger.info("Uploaded %d/%d images to Cloudinary", len(url_map), len(images))
+    if images and not url_map:
+        logger.warning(
+            "Extracted %d spreadsheet images but Cloudinary returned no URLs — "
+            "verify CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.",
+            len(images),
+        )
     return url_map

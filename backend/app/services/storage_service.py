@@ -1,9 +1,12 @@
+import logging
+
 import cloudinary
 import cloudinary.uploader
 from uuid import uuid4
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger("salemate.storage")
 
 cloudinary.config(
     cloud_name=settings.CLOUDINARY_CLOUD_NAME,
@@ -24,7 +27,8 @@ class StorageService:
                 resource_type="image",
             )
             return result.get("secure_url", "")
-        except Exception:
+        except Exception as e:
+            logger.warning("Cloudinary bill upload failed: %s", e, exc_info=True)
             return ""
 
     @staticmethod
@@ -45,7 +49,14 @@ class StorageService:
                 transformation=[{"width": 800, "height": 800, "crop": "limit"}],
             )
             return result.get("secure_url", "")
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Cloudinary upload_product_image failed (row=%s workspace=%s): %s",
+                row_index,
+                workspace_id,
+                e,
+                exc_info=True,
+            )
             return ""
 
     @staticmethod
@@ -62,6 +73,12 @@ class StorageService:
                 transformation=[{"width": 800, "height": 800, "crop": "limit"}],
             )
             return result.get("secure_url", "")
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Cloudinary upload_product_image_for_id failed (product=%s): %s",
+                product_id,
+                e,
+                exc_info=True,
+            )
             return ""
 

@@ -1038,6 +1038,10 @@ async def run_import_for_workspace(
                     len(extracted_images or {}),
                     sheet_name,
                 )
+        except ValueError:
+            # Re-raise known errors (like 403 Forbidden for missing Drive scopes)
+            # so the background job fails and the user sees the message in the UI.
+            raise
         except Exception:
             logger.warning(
                 "Google Sheet embedded-image sync skipped (Drive export/XLSX); "

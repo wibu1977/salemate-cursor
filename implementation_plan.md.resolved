@@ -1,0 +1,60 @@
+# Fix Google Sheets Image Import
+
+This plan guides the fixing of the Google Sheets image import feature. The core issue ("user can not import image") stems from two separate bugs in the extraction and validation pipeline.
+
+## 1. Silent Failure on Google Drive Export (`sheets_import_service.py`)
+
+**Problem:** To extract images, the app exports the Google Sheet to an XLSX file using the Google Drive API. If the user's Google connection lacks the `drive.readonly` scope (e.g., an older account connection), the export fails with a `403 Forbidden` error. Previously, this error was caught silently by a generic `except Exception` block, logging a server warning but continuing the text-only import. The user was never told why the images were missing.
+
+**Fix:** Catch and re-raise the `ValueError` (which contains the user-friendly "Reconnect Google" message) so that the background job fails and the frontend UI can display the error to the user.
+
+### [MODIFY] `backend/app/services/sheets_import_service.py`
+Locate the `run_import_for_workspace` function, specifically the `try...except` block surrounding `fetch_spreadsheet_export_xlsx_bytes`.
+
+```python
+        try:
+            xlsx_blob = await fetch_spreadsheet_export_xlsx_bytes(...)
+            # ... image extraction ...
+        except ValueError:
+            # [NEW] Re-raise known errors (like 403 Forbidden for missing Drive scopes)
+            # so the background job fails and the user sees the message in the UI.
+            raise
+        except Exception:
+            # Keep the generic exception for unexpected errors
+            logger.warning(
+                "Google Sheet embedded-image sync skipped (Drive export/XLSX); "
+                "text import continues. Reconnect Google if Drive scope missing.",
+                exc_info=True,
+            )
+```
+
+## 2. Alphabetical Sorting Bug in Sequential Fallback (`image_extractor.py`)
+
+**Problem:** When `openpyxl` fails to extract cell anchor coordinates for embedded images (common with newer "Image in cell" formats in Google Sheets), the code falls back to a sequential mapping based on the files in the XLSX `xl/media/` directory. However, it sorted the files alphabetically (`image1.jpeg`, `image10.jpeg`, `image2.jpeg`). This scramble caused images to be assigned to the wrong products.
+
+**Fix:** Sort the extracted media files numerically based on the number in their filename.
+
+### [MODIFY] `backend/app/services/image_extractor.py`
+Locate the fallback section near the bottom of `extract_images_from_xlsx`.
+
+```python
+    # ----- Fallback: sequential mapping --------------------------------
+    # Sort media files by name (image1.png, image2.png, …) and assign to
+    # consecutive data rows.
+    import re
+    def _extract_num(name: str) -> int:
+        m = re.search(r'\d+', name)
+        return int(m.group()) if m else 0
+
+    # [MODIFIED] Use numeric sorting
+    sorted_names = sorted(raw_media.keys(), key=_extract_num)
+    sequential: dict[int, bytes] = {}
+    for idx, name in enumerate(sorted_names):
+        row_0 = data_start_row_0based + idx
+        sequential[row_0] = raw_media[name]
+```
+
+## Verification
+
+1. Test with a Google Sheet containing images where the Google Account lacks Drive permissions. The UI should now explicitly throw a failed job with the message telling the user to reconnect their Google account.
+2. Test with a Google Sheet containing 12+ embedded images. The 10th, 11th, and 12th images should be assigned to the 10th, 11th, and 12th products respectively, not the 2nd, 3rd, and 4th.
