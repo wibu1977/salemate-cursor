@@ -178,6 +178,17 @@ export function ImportWizardModal({ open, onClose, googleStatus }: ImportWizardM
     },
   });
 
+  const googleDisconnectMutation = useMutation({
+    mutationFn: () => googleAuthApi.disconnect().then((r) => r.data),
+    onSuccess: () => {
+      toast("Đã ngắt kết nối Google. Bạn có thể bấm KẾT NỐI NGAY để cấp lại quyền.", "success");
+      queryClient.invalidateQueries({ queryKey: ["google-status"] });
+      setPickedSpreadsheetId("");
+      setPickedSpreadsheetName(null);
+    },
+    onError: (e) => toast(formatApiError(e), "error"),
+  });
+
   const analyzeFileMutation = useMutation({
     mutationFn: (file: File) => inventoryApi.analyzeImportFile(file, "products").then((r) => r.data),
     onSuccess: (data) => setAnalysisResult(data),
@@ -402,6 +413,17 @@ export function ImportWizardModal({ open, onClose, googleStatus }: ImportWizardM
                   {pickerBusy ? <RefreshCw className="h-5 w-5 animate-spin" /> : <FolderOpen className="h-5 w-5 text-accent" />}
                   {pickedSpreadsheetName || "CHỌN FILE TỪ DRIVE"}
                 </button>
+
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    disabled={googleDisconnectMutation.isPending}
+                    onClick={() => googleDisconnectMutation.mutate()}
+                    className="text-[11px] font-bold text-slate-400 underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+                  >
+                    {googleDisconnectMutation.isPending ? "Đang ngắt…" : "Ngắt kết nối Google (để đăng nhập lại)"}
+                  </button>
+                </div>
 
                 {tabData?.titles && (
                   <div className="space-y-2">

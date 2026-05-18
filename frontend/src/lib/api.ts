@@ -347,6 +347,7 @@ export const googleAuthApi = {
     api.get<{ authorization_url: string }>("/admin/auth/google/login", {
       params: next ? { next } : undefined,
     }),
+  disconnect: () => api.post<{ disconnected: boolean }>("/admin/auth/google/disconnect"),
   status: () =>
     api.get<{ connected: boolean; oauth_configured: boolean }>(
       "/admin/auth/google/status"

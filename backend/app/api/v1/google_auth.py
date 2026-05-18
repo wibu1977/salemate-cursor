@@ -73,6 +73,24 @@ async def google_connection_status(
     }
 
 
+@router.post("/disconnect")
+async def google_oauth_disconnect(
+    workspace_id: uuid.UUID = Depends(get_current_workspace_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear stored Google tokens so the user can connect again (new scopes / fresh consent)."""
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    result = await db.execute(stmt)
+    ws = result.scalar_one_or_none()
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace không tồn tại.")
+    ws.google_access_token = None
+    ws.google_refresh_token = None
+    ws.google_token_expires_at = None
+    await db.commit()
+    return {"disconnected": True}
+
+
 @router.get("/picker-config")
 async def google_picker_config(
     workspace_id: uuid.UUID = Depends(get_current_workspace_id),
